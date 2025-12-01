@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  backend:
+    build: .
+    volumes:
+      - ./models:/models:ro   # mount your vosk model directory here
+      - ./:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - VOSK_MODEL_PATH=/models/vosk-model-small-en-us-0.15
+      - LLM_URL=http://host.docker.internal:8080/completion
+      - TTS_MODE=dummy

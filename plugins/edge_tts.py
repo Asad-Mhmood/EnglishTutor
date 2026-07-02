@@ -13,9 +13,10 @@ import io
 import logging
 from typing import Optional
 
+import uuid
+
 import av
 import edge_tts
-from livekit import rtc
 from livekit.agents import tts
 from livekit.agents.types import APIConnectOptions
 
@@ -66,7 +67,14 @@ class EdgeTTSStream(tts.ChunkedStream):
         super().__init__(tts=tts, input_text=input_text, conn_options=conn_options)
         self._voice = voice
 
-    async def _run(self) -> None:
+    async def _run(self, output_emitter) -> None:
+        output_emitter.initialize(
+            request_id=str(uuid.uuid4()),
+            sample_rate=self._tts.sample_rate,
+            num_channels=_NUM_CHANNELS,
+            mime_type="audio/pcm",
+        )
+
         mp3_buf = bytearray()
 
         try:
@@ -83,16 +91,7 @@ class EdgeTTSStream(tts.ChunkedStream):
             return
 
         for pcm_bytes in _decode_mp3_to_pcm(bytes(mp3_buf), self._tts.sample_rate):
-            samples_per_channel = len(pcm_bytes) // 2  # 2 bytes per s16 sample
-            frame = rtc.AudioFrame(
-                data=pcm_bytes,
-                sample_rate=self._tts.sample_rate,
-                num_channels=_NUM_CHANNELS,
-                samples_per_channel=samples_per_channel,
-            )
-            self._event_ch.send_nowait(
-                tts.SynthesizedAudio(request_id=self._request_id, frame=frame)
-            )
+            output_emitter.push(pcm_bytes)
 
 
 def _decode_mp3_to_pcm(mp3_data: bytes, target_sample_rate: int) -> list[bytes]:

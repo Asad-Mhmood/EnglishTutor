@@ -12,6 +12,9 @@ native library is never loaded. We don't use any local-inference features
 import sys
 import types
 
+from dotenv import load_dotenv
+load_dotenv()  # load .env into os.environ before livekit-agents reads it
+
 _stub = types.ModuleType("livekit.local_inference")
 _stub.EOT = type("EOT", (), {"predict": lambda self, pcm: 0.0})  # type: ignore[attr-defined]
 _stub.VAD = type("VAD", (), {"predict": lambda self, pcm: 0.0})  # type: ignore[attr-defined]

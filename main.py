@@ -15,14 +15,17 @@ import types
 from dotenv import load_dotenv
 load_dotenv()  # load .env into os.environ before livekit-agents reads it
 
-_stub = types.ModuleType("livekit.local_inference")
-_stub.EOT = type("EOT", (), {"predict": lambda self, pcm: 0.0})  # type: ignore[attr-defined]
-_stub.VAD = type("VAD", (), {"predict": lambda self, pcm: 0.0})  # type: ignore[attr-defined]
-_stub.EOT_MAX_SAMPLES = 24000  # type: ignore[attr-defined]
-_stub.VAD_WINDOW_SAMPLES = 512  # type: ignore[attr-defined]
-_stub.init_eot = lambda *a, **kw: None  # type: ignore[attr-defined]
-_stub.init_vad = lambda *a, **kw: None  # type: ignore[attr-defined]
-sys.modules["livekit.local_inference"] = _stub
+# Windows-only. The native .pyd is fine on Linux, and stubbing it there would needlessly
+# disable the end-of-turn model (EOT), degrading turn detection on deployed workers.
+if sys.platform == "win32":
+    _stub = types.ModuleType("livekit.local_inference")
+    _stub.EOT = type("EOT", (), {"predict": lambda self, pcm: 0.0})  # type: ignore[attr-defined]
+    _stub.VAD = type("VAD", (), {"predict": lambda self, pcm: 0.0})  # type: ignore[attr-defined]
+    _stub.EOT_MAX_SAMPLES = 24000  # type: ignore[attr-defined]
+    _stub.VAD_WINDOW_SAMPLES = 512  # type: ignore[attr-defined]
+    _stub.init_eot = lambda *a, **kw: None  # type: ignore[attr-defined]
+    _stub.init_vad = lambda *a, **kw: None  # type: ignore[attr-defined]
+    sys.modules["livekit.local_inference"] = _stub
 
 from livekit.agents import WorkerOptions, cli  # noqa: E402
 

@@ -38,7 +38,13 @@ The voice pipeline is assembled in `agent/tutor.py::entrypoint`, called once per
 mic → Groq STT (whisper-large-v3-turbo) → Groq LLM (llama-3.3-70b) → EdgeTTS → speaker
 ```
 
-- **VAD is implicit.** `AgentSession` in livekit-agents v1.6+ bundles Silero VAD; do not pass `vad=`.
+- **VAD must be passed explicitly, via `_load_vad()`.** `AgentSession` does default to a bundled
+  Silero VAD, but that default is `inference.VAD`, which imports `livekit.local_inference` — the
+  module `main.py` stubs out (see below). The stub's `predict()` returns `0.0` for every frame, so
+  the VAD never detects speech and the agent responds *only to typed input*, never to the mic.
+  A bare `silero.VAD.load()` does not help: it delegates to `inference.VAD` too. Passing
+  `onnx_file_path=` forces the onnxruntime path, which is what `_load_vad()` does. Same weights,
+  different runtime.
 - **The system prompt is `instructions=`.** In v1.x, `Agent(instructions=...)` is sent as the system
   prompt every turn. Don't build a `ChatContext` manually. The prompt text lives in `prompts/tutor.py`
   and is written for *voice* — it forbids markdown, lists, and headers, because everything it emits

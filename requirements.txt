@@ -1,5 +1,6 @@
 livekit-agents>=1.0.0
 livekit-plugins-groq>=1.0.0
+livekit-plugins-silero>=1.0.0  # onnxruntime VAD; see agent/tutor.py::_load_vad
 edge-tts>=6.1.9
 av>=12.0.0
 pydantic-settings>=2.0.0

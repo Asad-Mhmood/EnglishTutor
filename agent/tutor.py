@@ -7,6 +7,7 @@ from livekit.plugins import groq, silero
 from config.settings import settings
 from plugins.edge_tts import EdgeTTS
 from prompts.tutor import TUTOR_SYSTEM_PROMPT
+from tools import search_web
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class EnglishTutor(Agent):
     """
 
     def __init__(self) -> None:
-        super().__init__(instructions=TUTOR_SYSTEM_PROMPT)
+        super().__init__(instructions=TUTOR_SYSTEM_PROMPT, tools=[search_web])
 
     async def on_enter(self) -> None:
         """Called once when the agent joins the session. Used for the greeting."""

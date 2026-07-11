@@ -21,10 +21,30 @@ Voice activity detection decides when you've stopped speaking, speech-to-text tr
 generates a reply, and text-to-speech voices it. Everything runs on free tiers: Groq's free API for
 STT and LLM, and Microsoft Edge's neural voices for TTS, which need no API key at all.
 
+## Web search
+
+Alex can look things up. When you ask about something that changes — the news, the weather, a price,
+last night's score — the LLM calls a `search_web` tool backed by [Tavily](https://tavily.com).
+
+Because a search takes a few seconds and dead air is unnerving on a voice call, the agent says what
+it's doing before it goes quiet: *"Let me search the web for tomorrow's weather in Lahore. One
+moment."* If the search runs long, it checks back in once more.
+
+You stay in control of when it happens:
+
+- Ask it to look something up and it will, even if it thinks it already knows.
+- Tell it not to search and it won't — it'll answer from memory and warn you that its information
+  may be out of date.
+- Ordinary conversation practice, grammar, and vocabulary never trigger a search.
+
+If Tavily is unreachable or times out, Alex tells you it couldn't reach the web rather than going
+silent or inventing an answer.
+
 ## Requirements
 
 - Python 3.13
 - A [Groq API key](https://console.groq.com) (free)
+- A [Tavily API key](https://tavily.com) (free tier: 1000 searches/month)
 - A [LiveKit](https://cloud.livekit.io) project — free tier is fine
 
 You only need LiveKit credentials to run in a real room. Local console mode still reads them from
@@ -48,9 +68,10 @@ LIVEKIT_API_KEY=your_key
 LIVEKIT_API_SECRET=your_secret
 
 GROQ_API_KEY=your_groq_key
+TAVILY_API_KEY=your_tavily_key
 ```
 
-These four are required — the app fails immediately on startup if any are missing. Optional
+These five are required — the app fails immediately on startup if any are missing. Optional
 overrides, with their defaults:
 
 | Variable | Default |
@@ -90,6 +111,7 @@ main.py                 entry point — see the note below
 agent/tutor.py          pipeline wiring and the Agent subclass
 prompts/tutor.py        the tutor's system prompt
 plugins/edge_tts.py     custom LiveKit TTS plugin for Microsoft Edge TTS
+tools/search.py         the search_web function tool (Tavily)
 config/settings.py      env-backed settings
 utils/logger.py         logging setup
 ```

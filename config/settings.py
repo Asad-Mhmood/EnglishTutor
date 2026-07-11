@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # Groq — required, must be in .env
     GROQ_API_KEY: str
 
+    # Tavily — required, must be in .env. Backs the agent's search_web tool.
+    TAVILY_API_KEY: str
+
     # LLM — llama-3.3-70b-versatile is Groq's most capable free model
     LLM_MODEL: str = "llama-3.3-70b-versatile"
 

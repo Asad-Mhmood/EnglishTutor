@@ -26,8 +26,8 @@ There are no tests, linters, or formatters configured.
 ## Environment
 
 `.env` is required and gitignored. `config/settings.py` instantiates `Settings()` at module scope, so
-a missing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, or `GROQ_API_KEY` raises a pydantic
-validation error at *import* time, before any agent code runs. Everything else (`LLM_MODEL`,
+a missing `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GROQ_API_KEY`, or `TAVILY_API_KEY`
+raises a pydantic validation error at *import* time, before any agent code runs. Everything else (`LLM_MODEL`,
 `STT_MODEL`, `TTS_VOICE`, `AGENT_GREETING`) has a default and can be overridden via env.
 
 ## Architecture
@@ -50,6 +50,25 @@ mic → Groq STT (whisper-large-v3-turbo) → Groq LLM (llama-3.3-70b) → EdgeT
   and is written for *voice* — it forbids markdown, lists, and headers, because everything it emits
   goes straight to TTS.
 - **The greeting** is spoken from `EnglishTutor.on_enter`, not the prompt.
+
+### `tools/search.py` — the `search_web` function tool
+
+Registered via `Agent(tools=[search_web])`. Tavily is used over a raw search API because it returns a
+synthesized `answer` string, which is what a voice reply should be built from.
+
+- **The "I'm searching now" announcement is `RunContext.with_filler`, not a `session.say()` before
+  the search.** `with_filler` only speaks while the session is *idle*, so it can't talk over the
+  user, and it cancels cleanly when the search returns. A manual `say()` would race the reply.
+  It fires at most twice (`max_steps=2`): the first line names the query, the second reassures.
+- **The prompt forbids the LLM from announcing the search itself** (see the WEB SEARCH section in
+  `prompts/tutor.py`). Without that, the user hears the announcement twice.
+- **The tool returns error strings rather than raising.** A raised exception surfaces to the LLM as
+  an opaque tool failure; a sentence like "the search timed out, tell the user" gets a graceful
+  spoken reply.
+- **Whether to search is decided entirely in the prompt.** "Search if asked", "don't search if told
+  not to", and "don't search for grammar" are all prompt rules — there is no code-level gate.
+- livekit strips the docstring's `Args:` block out of the tool description and folds it into the
+  JSON-schema parameter description. Both halves reach the LLM; they just land in different fields.
 
 ### The `sys.modules` stub in `main.py` — do not move or remove
 

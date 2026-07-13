@@ -8,9 +8,37 @@ The tutor persona is "Alex": patient, encouraging, and calibrated to your profic
 embeds corrections into its replies (you say *"I goed to the store"*, it answers *"Oh, you went to
 the store! What did you get?"*) and always ends with a follow-up question to keep you talking.
 
+## Try it
+
+**<https://english-tutor-nine-green.vercel.app>** — passcode `ALEX2026`
+
+Open it, enter the passcode, tap **Start talking**, and allow the microphone. Nothing to install; it
+works on a phone. Alex greets you first, so if you hear the greeting, everything downstream is
+working.
+
+The first call of the day can take a few seconds to connect — the agent worker scales to zero when
+idle and has to wake up.
+
 ## How it works
 
-Audio flows through a four-stage pipeline, orchestrated by [LiveKit Agents](https://docs.livekit.io/agents/):
+Two halves, deployed separately:
+
+```
+   your browser                  LiveKit Cloud
+┌────────────────┐            ┌─────────────────┐
+│  web/  (Next)  │            │  the agent      │
+│  on Vercel     │ ── room ── │  worker         │
+│                │            │                 │
+│ mints the JWT  │            │ STT → LLM → TTS │
+└────────────────┘            └─────────────────┘
+```
+
+The frontend exists mainly to mint a room token. Joining a LiveKit room needs a JWT signed with your
+API secret, and a secret can never ship to a browser — so a shareable link needs a small server-side
+piece to sign one per visitor. That is the whole reason this isn't a single static HTML page.
+
+The agent itself is where the voice pipeline lives, orchestrated by
+[LiveKit Agents](https://docs.livekit.io/agents/):
 
 ```
 mic → Silero VAD → Groq STT → Groq LLM → Edge TTS → speaker
@@ -42,10 +70,17 @@ silent or inventing an answer.
 
 ## Requirements
 
+For the agent:
+
 - Python 3.13
 - A [Groq API key](https://console.groq.com) (free)
 - A [Tavily API key](https://tavily.com) (free tier: 1000 searches/month)
 - A [LiveKit](https://cloud.livekit.io) project — free tier is fine
+
+For the web frontend, and only if you're changing or redeploying it:
+
+- Node 20+ and [pnpm](https://pnpm.io) (`npm install -g pnpm`)
+- A [Vercel](https://vercel.com) account (free)
 
 You only need LiveKit credentials to run in a real room. Local console mode still reads them from
 `.env`, so fill them in either way.
@@ -104,16 +139,88 @@ python main.py start    # production
 `python main.py download-files` pre-fetches model weights (such as Silero VAD) if you'd rather not
 wait for them on first run.
 
+### The web frontend
+
+The shareable web app lives in `web/` (Next.js, from LiveKit's `agent-starter-react` template).
+
+```bash
+cd web
+pnpm install     # use pnpm, not npm — npm resolves a newer `motion` that breaks the build
+pnpm dev         # http://localhost:3000
+```
+
+It needs its own `web/.env.local`:
+
+```ini
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_key
+LIVEKIT_API_SECRET=your_secret
+
+APP_PASSCODE=ALEX2026    # what visitors must type to start a call
+AGENT_NAME=              # must stay EMPTY — see below
+```
+
+**Leave `AGENT_NAME` blank.** The worker registers with no agent name, which means it auto-joins any
+room the frontend creates. If you set a name here that doesn't match a worker registered under that
+exact name, the page will load, the call will "connect", and Alex will simply never speak — with no
+error anywhere. That's the first thing to check if the app goes silent.
+
+## Deploying
+
+The two halves deploy independently. Changing the prompt does not redeploy the website; changing the
+website does not redeploy the agent.
+
+```bash
+lk agent deploy                      # the agent  → LiveKit Cloud
+cd web && vercel deploy --prod       # the website → Vercel
+```
+
+Secrets are **not** shared between them, and neither reads your local `.env` in production:
+
+```bash
+lk agent update-secrets --secrets "TAVILY_API_KEY=..."   # agent-side keys (Groq, Tavily)
+cd web && vercel env add APP_PASSCODE production          # web-side keys (LiveKit creds, passcode)
+```
+
+A missing agent secret is a crashloop, not a degraded agent — `config/settings.py` validates at import
+time. After `lk agent deploy`, run `lk agent logs`; reaching `registered worker` with no traceback
+means every required key was present.
+
+To change the passcode, set `APP_PASSCODE` again and redeploy — environment changes do not apply to
+deployments that already exist.
+
+## Sharing it
+
+Send the link and the passcode. Recipients need no account and install nothing.
+
+The passcode is not decoration. `web/app/api/token/route.ts` mints a LiveKit token for whoever asks,
+and each token starts a real agent session that consumes your Groq, Tavily, and LiveKit quota. The
+upstream template refuses to run that route in production for exactly this reason. The gate replaces
+that refusal: `/api/unlock` checks the passcode and sets an httpOnly cookie, and the token route
+issues nothing without it. The passcode never reaches browser JavaScript.
+
+There's no rate limiting on the unlock route, so don't post the link publicly — a determined attacker
+could brute-force the code. It's sized for sharing with people you know.
+
 ## Project layout
 
 ```
-main.py                 entry point — see the note below
-agent/tutor.py          pipeline wiring and the Agent subclass
-prompts/tutor.py        the tutor's system prompt
-plugins/edge_tts.py     custom LiveKit TTS plugin for Microsoft Edge TTS
-tools/search.py         the search_web function tool (Tavily)
-config/settings.py      env-backed settings
-utils/logger.py         logging setup
+main.py                     entry point — see the note below
+agent/tutor.py              pipeline wiring and the Agent subclass
+prompts/tutor.py            the tutor's system prompt
+plugins/edge_tts.py         custom LiveKit TTS plugin for Microsoft Edge TTS
+tools/search.py             the search_web function tool (Tavily)
+config/settings.py          env-backed settings
+utils/logger.py             logging setup
+Dockerfile                  what LiveKit Cloud builds
+livekit.toml                which LiveKit project/agent this deploys to
+
+web/                        the shareable frontend (Next.js)
+  app-config.ts             title, button copy, colors, which inputs are enabled
+  components/app/welcome-view.tsx   landing screen + the passcode form
+  app/api/token/route.ts    mints the LiveKit JWT — gated, see "Sharing it"
+  app/api/unlock/route.ts   checks the passcode, sets the unlock cookie
+  lib/auth.ts               the passcode/cookie logic
 ```
 
 ### A note on `main.py`
@@ -132,8 +239,33 @@ late imports.
 
 The tutor's behavior lives entirely in `prompts/tutor.py`. It's written for speech, so it forbids
 markdown, bullet points, and headers — anything the LLM emits goes straight to text-to-speech and
-would be read aloud verbatim. Keep that constraint if you edit it.
+would be read aloud verbatim. Keep that constraint if you edit it. Whether Alex searches the web is
+also decided there, not in code: "search if asked", "don't search if told not to", and "don't search
+for grammar" are all prompt rules.
 
 Swapping providers means changing one line each in `agent/tutor.py`. LiveKit ships plugins for
 OpenAI, Deepgram, Cartesia, ElevenLabs, and others; the `EdgeTTS` class in `plugins/edge_tts.py` is
 only there because Edge TTS is free and had no official plugin.
+
+The frontend's wording, colors, and which inputs are shown are all in `web/app-config.ts`. Camera and
+screen share are deliberately off — Alex is voice-only, so those buttons would do nothing.
+
+## Troubleshooting
+
+**The page loads and connects, but Alex never speaks.** Check `AGENT_NAME` in `web/.env.local` is
+empty. A non-matching agent name means the room is created, no worker is dispatched to it, and
+nothing reports an error.
+
+**The agent goes silent mid-conversation.** `EdgeTTSStream._run` logs and returns on a synthesis
+failure rather than raising, so a failed TTS call produces silence, not an error. Check `lk agent
+logs`.
+
+**The agent responds to typed input but never to the microphone.** VAD isn't loading. See the
+`_load_vad()` note in `CLAUDE.md` — the Windows `local_inference` stub silently makes the default VAD
+return "no speech" for every frame.
+
+**`pnpm build` fails with hundreds of `Delete ␍` errors.** A Windows checkout converted the template
+to CRLF. Run `pnpm exec prettier --write .` from `web/`.
+
+**"That passcode isn't right."** It's compared exactly, including case. If you rotated
+`APP_PASSCODE`, remember an env change only takes effect on the *next* deploy.

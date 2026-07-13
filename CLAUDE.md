@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+See `ARCHITECTURE.md` for the system diagram, the request lifecycle, the deployment pipeline, the
+secret-store layout, and the decision log (why the non-obvious choices were made).
+
 ## What this is
 
 A LiveKit voice agent that acts as a conversational English tutor ("Alex"). A user joins a LiveKit

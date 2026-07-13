@@ -1,0 +1,341 @@
+# Architecture & Deployment
+
+Reference for how this system actually fits together and how it gets shipped. This file deliberately
+covers what the **code does not tell you**: which pieces live where, what talks to what, why certain
+choices were made over the obvious alternative, and the failure modes that produce *silence* instead
+of an error.
+
+For day-to-day commands see `README.md`. For rules when editing the code see `CLAUDE.md`.
+
+---
+
+## 1. The system in one picture
+
+Two separately deployed halves. Neither one redeploys the other.
+
+```
+        ┌──────────────────────────────────────────┐
+        │  BROWSER  (phone or laptop, any network) │
+        └──────────────────────┬───────────────────┘
+                               │  1. HTTPS: load page, submit passcode
+                               │  3. WebRTC: audio in / audio out
+              ┌────────────────┴──────────────────┐
+              │                                   │
+   ┌──────────▼────────────┐        ┌─────────────▼──────────────┐
+   │  VERCEL               │        │  LIVEKIT CLOUD             │
+   │  project: english-    │        │  project: demo-yygoau1f    │
+   │           tutor       │        │  region:  ap-south         │
+   │                       │        │                            │
+   │  Next.js app (web/)   │        │  ┌──────── SFU / room ───┐ │
+   │   /api/unlock         │        │  │  media routing        │ │
+   │   /api/token  ────────┼── 2. ──┼─▶│                       │ │
+   │                       │  JWT   │  └───────────┬───────────┘ │
+   │  Holds:               │        │              │ 4. auto-    │
+   │   LIVEKIT_API_KEY     │        │              │    dispatch │
+   │   LIVEKIT_API_SECRET  │        │  ┌───────────▼───────────┐ │
+   │   APP_PASSCODE        │        │  │  AGENT WORKER         │ │
+   └───────────────────────┘        │  │  CA_e4HZqEcBFotF      │ │
+                                    │  │  (our Dockerfile)     │ │
+                                    │  │                       │ │
+                                    │  │  Holds:               │ │
+                                    │  │   GROQ_API_KEY        │ │
+                                    │  │   TAVILY_API_KEY      │ │
+                                    │  └───────┬───────────────┘ │
+                                    └──────────┼─────────────────┘
+                                               │ 5. outbound HTTPS
+                          ┌────────────────────┼────────────────────┐
+                          ▼                    ▼                    ▼
+                      Groq API            Tavily API          Edge TTS
+                   (STT + LLM)            (web search)        (keyless)
+```
+
+**The key structural fact:** the browser never holds a credential. Vercel signs a short-lived room
+token; LiveKit Cloud runs the agent; the agent alone holds the Groq and Tavily keys. Compromising the
+frontend does not expose the AI provider keys, and compromising the agent does not expose the ability
+to mint room tokens.
+
+---
+
+## 2. Why there is a web app at all
+
+The most common wrong assumption about this project is that the frontend could be a single static
+HTML file on any web host. It cannot.
+
+Joining a LiveKit room requires a **JWT signed with `LIVEKIT_API_SECRET`**. Anything shipped to a
+browser is readable by every visitor, so the secret cannot live there. Signing must happen on a
+server. That server-side signing endpoint — `web/app/api/token/route.ts` — is the entire reason a
+Next.js app exists here. Everything else in `web/` is presentation wrapped around it.
+
+This is also why the frontend, not the agent, holds the LiveKit credentials: it is the thing that
+signs. The agent gets its LiveKit connection injected by LiveKit Cloud automatically, which is why
+`LIVEKIT_*` does **not** appear in the agent's secret list.
+
+---
+
+## 3. What happens when someone opens the link
+
+```
+  visitor                 Vercel                    LiveKit Cloud            agent worker
+     │                      │                            │                        │
+     │ GET /                │                            │                        │
+     │─────────────────────▶│                            │                        │
+     │  page + passcode box │                            │                        │
+     │◀─────────────────────│                            │                        │
+     │                      │                            │                        │
+     │ POST /api/unlock     │                            │                        │
+     │  {passcode}          │                            │                        │
+     │─────────────────────▶│ constant-time compare      │                        │
+     │                      │ vs APP_PASSCODE            │                        │
+     │  Set-Cookie:         │                            │                        │
+     │  tutor_unlocked      │                            │                        │
+     │  (httpOnly, 12h)     │                            │                        │
+     │◀─────────────────────│                            │                        │
+     │                      │                            │                        │
+     │ POST /api/token      │                            │                        │
+     │  (cookie rides along │                            │                        │
+     │   automatically)     │                            │                        │
+     │─────────────────────▶│ no valid cookie → 401      │                        │
+     │                      │ valid → sign JWT (15m TTL) │                        │
+     │  {participantToken,  │                            │                        │
+     │   serverUrl, room}   │                            │                        │
+     │◀─────────────────────│                            │                        │
+     │                                                   │                        │
+     │ WebRTC connect with JWT                           │                        │
+     │──────────────────────────────────────────────────▶│                        │
+     │                                                   │ room created           │
+     │                                                   │ ─── dispatch ─────────▶│
+     │                                                   │                        │ on_enter():
+     │                            greeting audio         │                        │ speaks greeting
+     │◀──────────────────────────────────────────────────┼────────────────────────│
+     │                                                   │                        │
+     │ ══════════ live audio both directions ════════════│════════════════════════│
+```
+
+**Dispatch is implicit and this matters.** The worker registers with an *empty* agent name, which puts
+LiveKit in automatic-dispatch mode: any room created on the project gets a worker. Nothing in the
+frontend names the agent. If someone sets `AGENT_NAME` in `web/.env.local` to a value that no worker
+is registered under, every step above still succeeds — page loads, passcode accepts, token issues,
+room connects — and then **no agent ever joins and nothing raises an error**. The user sits in
+silence. This is the single most confusing failure this system can produce.
+
+---
+
+## 4. Inside the agent (one room = one `entrypoint()`)
+
+```
+   mic audio
+      │
+      ▼
+   Silero VAD ─────── "user stopped talking"
+      │                 (onnxruntime build — see §7)
+      ▼
+   Groq STT  (whisper-large-v3-turbo)
+      │
+      ▼
+   Groq LLM  (llama-3.3-70b-versatile)  ◀──── system prompt: prompts/tutor.py
+      │                                        (re-sent every turn)
+      ├── may call tool: search_web ──▶ Tavily ──▶ synthesized answer
+      │                                 (meanwhile: with_filler speaks
+      │                                  "Let me search the web for…")
+      ▼
+   Edge TTS  (en-US-JennyNeural, keyless)
+      │
+      ▼
+   MP3 → PyAV decode → PCM s16 mono 24 kHz
+      │
+      ▼
+   speaker
+```
+
+Everything on this path is a free tier: Groq for STT and LLM, Tavily at 1,000 searches/month, and
+Edge TTS which needs no key at all.
+
+---
+
+## 5. Deployment pipeline
+
+### The two commands
+
+```bash
+lk agent deploy                    # agent  → LiveKit Cloud
+cd web && vercel deploy --prod     # web    → Vercel
+```
+
+Both build from your **local working directory**, not from git. There is no CI, no GitHub trigger, no
+branch that represents production. Consequences worth internalising:
+
+- Uncommitted local edits **will** ship if you deploy.
+- The deployed artifact may correspond to no commit that exists anywhere.
+- A teammate cloning the repo cannot reproduce what is live without your working tree.
+
+Connecting the repo to GitHub would give push-to-deploy on Vercel. That has not been done.
+
+### Agent deploy, step by step
+
+```
+lk agent deploy
+   │
+   ├─ reads livekit.toml  → project demo-yygoau1f, agent CA_e4HZqEcBFotF
+   ├─ builds Dockerfile   → python:3.13-slim, pip install -r requirements.txt
+   ├─ pushes image to LiveKit's registry
+   └─ rolling update      → status: Updating ─▶ Running   (~10s observed)
+```
+
+The container runs `python main.py start`. Verify with:
+
+```bash
+lk agent status     # want: Status = Running, replicas non-zero
+lk agent logs       # want: "registered worker", no traceback
+```
+
+**`registered worker` is the real success signal, not "Deployed agent".** `config/settings.py`
+constructs `Settings()` at import time, so any missing secret raises a pydantic error *before* the
+agent code runs. The image still builds and deploys fine; the container then dies on startup. A
+missing secret is a **crashloop, not a degraded agent**. Reaching `registered worker` proves every
+required key was present.
+
+### Web deploy, step by step
+
+```
+vercel deploy --prod
+   │
+   ├─ uploads web/ (respecting .gitignore — .env.local never leaves your machine)
+   ├─ pnpm install --frozen-lockfile
+   ├─ pnpm build   → prettier + eslint + tsc + next build
+   ├─ injects Vercel env vars (NOT your .env.local)
+   └─ aliases → english-tutor-nine-green.vercel.app
+```
+
+The build is strict: a formatting violation fails it, not just a type error. Run `pnpm build` locally
+before deploying.
+
+### Secrets: three stores, none of them synced
+
+This is the part that bites people. Adding a key to `.env` makes it work locally and then fail in
+production, silently as far as your terminal is concerned.
+
+| Store | Contains | How to write it | Read by |
+|---|---|---|---|
+| `.env` (repo root, gitignored) | everything | edit the file | local `main.py` runs only |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE` | `vercel env add K production` | the deployed web app |
+
+Notes learned the hard way:
+
+- `lk agent update-secrets` **merges**; it does not wipe the others. Verify with `lk agent secrets list`.
+- LiveKit Cloud injects `LIVEKIT_*` into the agent container itself. That is why those keys are absent
+  from the agent's secret list yet mandatory on Vercel.
+- **Vercel env changes do not affect existing deployments.** Rotating `APP_PASSCODE` requires a
+  redeploy to take effect. This is not obvious and looks like the change "didn't save".
+
+### Adding a new secret — the checklist
+
+1. Add it to `.env` (local).
+2. Add it to `config/settings.py` as a required field **only if the agent needs it** — remember this
+   turns a missing value into a production crashloop.
+3. Push it to whichever store the *runtime that reads it* uses (table above).
+4. Redeploy that half.
+5. Confirm: `lk agent logs` → `registered worker`, or re-test the web flow.
+
+---
+
+## 6. The passcode gate — why it exists, and don't delete it
+
+`app/api/token/route.ts` shipped from LiveKit's template with a hard refusal to run in production:
+
+```ts
+throw new Error('THIS API ROUTE IS INSECURE. DO NOT USE THIS ROUTE IN PRODUCTION WITHOUT AN AUTHENTICATION LAYER.');
+```
+
+That was not paranoia. The route mints a room token for **anyone who asks**, and every token starts a
+real agent session consuming Groq, Tavily, and LiveKit quota. Public Vercel URLs get crawled. Left
+open, a bot can drain all three free tiers.
+
+The gate is the authentication layer that warning demanded:
+
+```
+POST /api/unlock  ──▶  constant-time compare against APP_PASSCODE
+                       ✗ → 401
+                       ✓ → Set-Cookie: tutor_unlocked =
+                             sha256(APP_PASSCODE + ":" + LIVEKIT_API_SECRET)
+                             httpOnly, sameSite=strict, secure, 12h
+
+POST /api/token   ──▶  recompute that hash server-side, compare
+                       ✗ → 401, no token
+                       ✓ → sign and return the LiveKit JWT
+```
+
+Properties this buys:
+
+- The passcode never reaches client-side JavaScript.
+- The cookie cannot be forged without `LIVEKIT_API_SECRET`, which never leaves the server.
+- No database, no KV store, no session table — the secret *is* the state.
+- `TokenSource.endpoint()` is same-origin, so the cookie is attached automatically. No SDK
+  modification, no custom headers.
+
+**Residual risk, accepted deliberately:** `/api/unlock` has no rate limiting, so the passcode is
+brute-forceable given time. That is fine for a link shared with people you know and *not* fine for a
+link posted publicly. Closing it properly means IP rate limiting on the unlock route, which needs a KV
+store (Vercel KV or Upstash) — currently the only reason this system has no database.
+
+---
+
+## 7. Decision log — where we did *not* take the obvious path
+
+These are the choices most likely to be "cleaned up" by someone who doesn't know why they're there.
+
+| Decision | Obvious alternative | Why we didn't |
+|---|---|---|
+| **Stub `livekit.local_inference` in `main.py`** | just import it | Its native `.pyd` calls Windows `ExitProcess()` during init on this machine. A process-level exit **cannot be caught** by `try`/`except`. The stub must be installed before the first livekit import — import order in `main.py` is load-bearing. Windows-only; stubbing it on Linux would needlessly disable end-of-turn detection. |
+| **VAD loaded via `onnx_file_path=`** | `silero.VAD.load()` | The bare call delegates to `inference.VAD`, which imports the stubbed module above. The stub's `predict()` returns `0.0` forever, so speech is *never* detected — the agent responds only to typed input and appears deaf to the mic, with no error. Passing the onnx path forces the onnxruntime runtime. Same weights. |
+| **Tavily for search** | raw Google/Bing API | Tavily returns a synthesized `answer` string. A voice reply should be built from a sentence, not from ten blue links. |
+| **Search announcement via `RunContext.with_filler`** | `session.say()` before searching | `with_filler` only speaks while the session is *idle*, so it cannot talk over the user, and it cancels cleanly when the search returns. A manual `say()` races the reply. |
+| **Tool returns error *strings*** | raise on failure | A raised exception surfaces to the LLM as an opaque tool failure. A sentence like *"the search timed out, tell the user"* produces a graceful spoken reply instead. |
+| **Tavily's `answer` is the whole tool output** | also pass the raw snippets | Real snippets are markdown-link soup and sometimes raw JSON (weather providers). Feeding those to a TTS pipeline invites reading URLs aloud. Snippets are a fallback only, and get stripped of links first. Keeping a URL out of the audio is done by never handing the LLM one. |
+| **Whether to search is decided in the prompt** | a code-level gate | "Search if asked", "don't search if told not to", "never for grammar" are all prompt rules. There is no code path that blocks a search. |
+| **`pnpm` in `web/`, never `npm`** | npm | The template pins `pnpm-lock.yaml`. npm ignores it and resolves a newer `motion` whose stricter `Easing` type rejects the template's own `ease: 'linear'`. The build then fails on a type error in code you never touched. |
+| **`.gitattributes` forcing LF in `web/`** | leave it | The template's prettier config enforces LF and the build runs prettier. A Windows checkout converts everything to CRLF → hundreds of `Delete ␍` errors. |
+| **Camera + screen share disabled in the UI** | leave the template defaults | Alex is voice-only and has no vision. Those buttons would do nothing, and offering them to a non-technical user is a trap. |
+
+---
+
+## 8. Failure modes that look like nothing is wrong
+
+Ranked by how much time they can waste.
+
+| Symptom | Cause | Check |
+|---|---|---|
+| Page connects, call "starts", **Alex never speaks** | `AGENT_NAME` set in `web/` but no worker registered under that name → room created, nobody dispatched, no error anywhere | `AGENT_NAME` must be empty in `web/.env.local` and Vercel |
+| Agent **deaf to the mic**, but answers typed input | VAD returning 0.0 for every frame (the `local_inference` stub) | `_load_vad()` must pass `onnx_file_path=` |
+| Agent goes **silent mid-conversation** | `EdgeTTSStream._run` logs and *returns* on synthesis failure rather than raising — a failed TTS produces silence, not an error | `lk agent logs` |
+| Deploy "succeeded", agent unreachable | missing secret → pydantic error at import → crashloop | `lk agent logs` for `registered worker` |
+| Passcode change "didn't save" | Vercel env vars don't apply to existing deployments | redeploy after `vercel env add` |
+| Everyone gets HTTP 500 on connect | the template's production `throw` in the token route is back | the passcode gate in `lib/auth.ts` must be wired in |
+
+The common thread: **this system fails quietly.** VAD failure, TTS failure, and dispatch failure all
+produce silence rather than an exception. When something is wrong, assume the logs know and the UI
+does not.
+
+---
+
+## 9. Current deployment (as of 2026-07-13)
+
+| | |
+|---|---|
+| Live URL | <https://english-tutor-nine-green.vercel.app> |
+| Passcode | `ALEX2026` (rotate via `vercel env add APP_PASSCODE production --force`, then redeploy) |
+| LiveKit project | `demo-yygoau1f`, region `ap-south` (India West) |
+| LiveKit agent | `CA_e4HZqEcBFotF` |
+| Vercel project | `english-tutor` |
+| Agent resources | 2000m CPU / 4 GB, 1 replica |
+
+First connection after an idle period can take a few seconds — worker replicas were observed at 0
+shortly after deploy and 1 while warm, so expect a cold start on the first call of the day.
+
+### Not yet done
+
+- Nothing is committed to git; both halves were deployed from the local working tree.
+- No CI, no push-to-deploy. Connecting the GitHub repo to Vercel would give the web half automatic
+  deploys.
+- No rate limiting on `/api/unlock` (see §6).
+- No custom domain.

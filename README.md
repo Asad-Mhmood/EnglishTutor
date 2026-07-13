@@ -202,6 +202,12 @@ issues nothing without it. The passcode never reaches browser JavaScript.
 There's no rate limiting on the unlock route, so don't post the link publicly — a determined attacker
 could brute-force the code. It's sized for sharing with people you know.
 
+## Going deeper
+
+`ARCHITECTURE.md` is the reference doc: system diagram, what happens when someone opens the link,
+the deployment pipeline, where every secret lives, a decision log explaining the non-obvious choices,
+and the failure modes that produce silence instead of an error.
+
 ## Project layout
 
 ```

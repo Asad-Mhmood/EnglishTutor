@@ -1,0 +1,5 @@
+# The template's prettier config enforces LF. Without this, a Windows checkout
+# rewrites everything to CRLF and `pnpm build` fails on prettier/prettier errors.
+* text=auto eol=lf
+*.png binary
+*.woff binary

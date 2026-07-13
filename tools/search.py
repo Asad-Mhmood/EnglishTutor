@@ -6,6 +6,7 @@ Tavily is used rather than a raw search API because it returns a synthesized
 aloud, not ten blue links.
 """
 import logging
+import re
 
 from livekit.agents import RunContext, function_tool
 from tavily import AsyncTavilyClient
@@ -25,6 +26,10 @@ _MAX_RESULTS = 3
 # Long page extracts blow up the prompt for no gain — the answer summary carries
 # most of the signal, and these are only there to back it up.
 _MAX_SNIPPET_CHARS = 300
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")  # [text](url) -> text
+_BARE_URL_RE = re.compile(r"https?://\S+")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 _client = AsyncTavilyClient(api_key=settings.TAVILY_API_KEY)
 
@@ -48,25 +53,45 @@ def _filler_source(query: str):
     return source
 
 
-def _format(query: str, data: dict) -> str:
-    """Flatten a Tavily response into something the LLM can speak from."""
-    answer = (data.get("answer") or "").strip()
-    results = data.get("results") or []
+def _clean(text: str) -> str:
+    """
+    Strip the parts of a page extract that must never reach TTS.
 
-    if not answer and not results:
+    Real Tavily snippets are littered with markdown links and bare URLs
+    ("[5 References](https://en.wikipedia.org/...)"). The prompt tells the LLM not
+    to read links aloud, but the safest way to keep a URL out of the audio is to
+    not hand it one. Markdown link text is kept; the target is dropped.
+    """
+    text = _MD_LINK_RE.sub(r"\1", text)
+    text = _BARE_URL_RE.sub("", text)
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def _format(query: str, data: dict) -> str:
+    """
+    Flatten a Tavily response into something the LLM can speak from.
+
+    Tavily's synthesized `answer` is already a clean couple of sentences — exactly
+    the shape of a voice reply — so when it's there, it is the whole payload. The
+    raw snippets are only worth their noise when there is no answer to fall back on.
+    """
+    answer = (data.get("answer") or "").strip()
+    if answer:
+        return f"Search result: {answer}"
+
+    snippets: list[str] = []
+    for result in data.get("results") or []:
+        content = _clean(result.get("content") or "")[:_MAX_SNIPPET_CHARS]
+        if content:
+            title = _clean(result.get("title") or "") or "Untitled"
+            snippets.append(f"- {title}: {content}")
+        if len(snippets) == _MAX_RESULTS:
+            break
+
+    if not snippets:
         return f"The web search for {query!r} returned no results."
 
-    parts: list[str] = []
-    if answer:
-        parts.append(f"Summary: {answer}")
-
-    for result in results[:_MAX_RESULTS]:
-        title = (result.get("title") or "Untitled").strip()
-        content = (result.get("content") or "").strip()[:_MAX_SNIPPET_CHARS]
-        if content:
-            parts.append(f"- {title}: {content}")
-
-    return "\n".join(parts)
+    return "Search results:\n" + "\n".join(snippets)
 
 
 @function_tool

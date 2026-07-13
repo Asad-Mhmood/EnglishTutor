@@ -56,6 +56,13 @@ mic → Groq STT (whisper-large-v3-turbo) → Groq LLM (llama-3.3-70b) → EdgeT
 Registered via `Agent(tools=[search_web])`. Tavily is used over a raw search API because it returns a
 synthesized `answer` string, which is what a voice reply should be built from.
 
+- **When Tavily returns an `answer`, that is the entire tool output** — `_format` drops the raw
+  result snippets on the floor. Real snippets are markdown-link soup and sometimes a raw JSON dump
+  (the weather providers do this); the answer is already two clean sentences. Snippets are only
+  used as a fallback when there is no answer, and `_clean()` strips links and bare URLs from them
+  first. Keeping a URL out of the audio is done by never handing the LLM one, not by asking it
+  nicely in the prompt.
+
 - **The "I'm searching now" announcement is `RunContext.with_filler`, not a `session.say()` before
   the search.** `with_filler` only speaks while the session is *idle*, so it can't talk over the
   user, and it cancels cleanly when the search returns. A manual `say()` would race the reply.

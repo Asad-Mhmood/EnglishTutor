@@ -1,10 +1,16 @@
-import { headers } from 'next/headers';
-import { App } from '@/components/app/app';
-import { getAppConfig } from '@/lib/utils';
+import { redirect } from 'next/navigation';
+import { currentLearnerId } from '@/lib/session';
 
-export default async function Page() {
-  const hdrs = await headers();
-  const appConfig = await getAppConfig(hdrs);
+/**
+ * `/` is a signpost, not a page.
+ *
+ * The old root *was* the call screen, with the passcode form bolted onto it. Splitting login,
+ * home and call into their own routes means the root has nothing left to render — so it sends
+ * you to whichever of them applies.
+ */
 
-  return <App appConfig={appConfig} />;
+export const dynamic = 'force-dynamic';
+
+export default async function RootPage() {
+  redirect((await currentLearnerId()) ? '/home' : '/login');
 }

@@ -17,7 +17,7 @@ Two separately deployed halves. Neither one redeploys the other.
         ┌──────────────────────────────────────────┐
         │  BROWSER  (phone or laptop, any network) │
         └──────────────────────┬───────────────────┘
-                               │  1. HTTPS: load page, submit passcode
+                               │  1. HTTPS: load page, sign in (username + passcode)
                                │  3. WebRTC: audio in / audio out
               ┌────────────────┴──────────────────┐
               │                                   │
@@ -27,7 +27,7 @@ Two separately deployed halves. Neither one redeploys the other.
    │           tutor       │        │  region:  ap-south         │
    │                       │        │                            │
    │  Next.js app (web/)   │        │  ┌──────── SFU / room ───┐ │
-   │   /api/unlock         │        │  │  media routing        │ │
+   │   /api/login          │        │  │  media routing        │ │
    │   /api/token  ────────┼── 2. ──┼─▶│                       │ │
    │                       │  JWT   │  └───────────┬───────────┘ │
    │  Holds:               │        │              │ 4. auto-    │
@@ -78,24 +78,30 @@ signs. The agent gets its LiveKit connection injected by LiveKit Cloud automatic
   visitor                 Vercel                    LiveKit Cloud            agent worker
      │                      │                            │                        │
      │ GET /                │                            │                        │
-     │─────────────────────▶│                            │                        │
-     │  page + passcode box │                            │                        │
+     │─────────────────────▶│ no session → 307 /login    │                        │
      │◀─────────────────────│                            │                        │
      │                      │                            │                        │
-     │ POST /api/unlock     │                            │                        │
-     │  {passcode}          │                            │                        │
-     │─────────────────────▶│ constant-time compare      │                        │
-     │                      │ vs APP_PASSCODE            │                        │
+     │ POST /api/login      │                            │                        │
+     │  {username,passcode} │                            │                        │
+     │─────────────────────▶│ 1. constant-time compare   │                        │
+     │                      │    vs APP_PASSCODE         │                        │
+     │                      │ 2. upsert learner BY       │                        │
+     │                      │    USERNAME (Neon)         │                        │
+     │                      │ 3. HMAC-sign the id        │                        │
      │  Set-Cookie:         │                            │                        │
-     │  tutor_unlocked      │                            │                        │
-     │  (httpOnly, 12h)     │                            │                        │
+     │  tutor_session =     │                            │                        │
+     │   <id>.<hmac>        │                            │                        │
+     │  (httpOnly, 30d)     │                            │                        │
      │◀─────────────────────│                            │                        │
+     │                      │                            │                        │
+     │ GET /home → /call    │                            │                        │
      │                      │                            │                        │
      │ POST /api/token      │                            │                        │
      │  (cookie rides along │                            │                        │
      │   automatically)     │                            │                        │
      │─────────────────────▶│ no valid cookie → 401      │                        │
      │                      │ valid → sign JWT (15m TTL) │                        │
+     │                      │ identity = learner_<uuid>  │                        │
      │  {participantToken,  │                            │                        │
      │   serverUrl, room}   │                            │                        │
      │◀─────────────────────│                            │                        │
@@ -111,10 +117,14 @@ signs. The agent gets its LiveKit connection injected by LiveKit Cloud automatic
      │ ══════════ live audio both directions ════════════│════════════════════════│
 ```
 
+**The learner id in the participant identity is the only channel to the agent.** Everything the
+agent later writes to the progress tables hangs off that one string; `agent/tutor.py::_learner_id_from`
+parses it back out of `learner_<uuid>`. There is no other place the two halves exchange identity.
+
 **Dispatch is implicit and this matters.** The worker registers with an *empty* agent name, which puts
 LiveKit in automatic-dispatch mode: any room created on the project gets a worker. Nothing in the
 frontend names the agent. If someone sets `AGENT_NAME` in `web/.env.local` to a value that no worker
-is registered under, every step above still succeeds — page loads, passcode accepts, token issues,
+is registered under, every step above still succeeds — page loads, sign-in accepts, token issues,
 room connects — and then **no agent ever joins and nothing raises an error**. The user sits in
 silence. This is the single most confusing failure this system can produce.
 
@@ -161,16 +171,19 @@ Edge TTS which needs no key at all.
 ### Three targets, two of them deployable
 
 ```
-   repo root ──── lk agent deploy ─────────▶  LiveKit Cloud    (the writer)
-   web/      ──── vercel deploy --prod ────▶  Vercel           (the reader)
-   progress/schema.sql ─── psql, by hand ──▶  Neon Postgres    (provisioned once)
+   repo root ──── lk agent deploy ─────────────────▶  LiveKit Cloud   (the writer)
+   web/      ──── vercel deploy --prod ────────────▶  Vercel          (the reader)
+   progress/schema.sql ── scripts/apply_schema.py ─▶  Neon Postgres   (out of band)
 ```
 
 The database is **not** part of either deploy. Nothing in `lk agent deploy` or `vercel deploy` runs a
 migration, checks the schema, or notices that it's out of date. `progress/schema.sql` is applied by
-hand, is idempotent (`CREATE TABLE IF NOT EXISTS` throughout), and has no version table. A schema
-change is a manual, out-of-band step that you must remember to do **before** deploying the code that
-depends on it — otherwise the agent will happily run and fail every insert into the shutdown
+`python scripts/apply_schema.py`; it is idempotent throughout (`CREATE ... IF NOT EXISTS`,
+`ADD COLUMN IF NOT EXISTS`, guarded `UPDATE`s), which is *why* re-running it is a safe migration and
+why there is no version table. New DDL must preserve that property.
+
+A schema change is a manual, out-of-band step you must remember to do **before** deploying the code
+that depends on it — otherwise the agent will happily run and fail every insert into the shutdown
 callback's swallowed exception handler, and the only symptom is progress rows that never appear.
 
 ### Both halves build from your working tree, not from git
@@ -295,32 +308,49 @@ That was not paranoia. The route mints a room token for **anyone who asks**, and
 real agent session consuming Groq, Tavily, and LiveKit quota. Public Vercel URLs get crawled. Left
 open, a bot can drain all three free tiers.
 
-The gate is the authentication layer that warning demanded:
+Sign-in is the authentication layer that warning demanded:
 
 ```
-POST /api/unlock  ──▶  constant-time compare against APP_PASSCODE
-                       ✗ → 401
-                       ✓ → Set-Cookie: tutor_unlocked =
-                             sha256(APP_PASSCODE + ":" + LIVEKIT_API_SECRET)
-                             httpOnly, sameSite=strict, secure, 12h
+POST /api/login   ──▶  1. constant-time compare against APP_PASSCODE
+   {username,           ✗ → 401  (checked FIRST — before the username is even
+    passcode}                     looked at, so the error messages cannot be used
+                                  to probe which usernames exist)
+                       2. upsert learners ON CONFLICT (username)
+                       3. Set-Cookie: tutor_session =
+                             <learnerId> "." HMAC-SHA256(
+                                 key = APP_PASSCODE + ":" + LIVEKIT_API_SECRET,
+                                 msg = learnerId)
+                             httpOnly, sameSite=lax, secure, 30d
 
-POST /api/token   ──▶  recompute that hash server-side, compare
+POST /api/token   ──▶  recompute the HMAC server-side, compare
                        ✗ → 401, no token
-                       ✓ → sign and return the LiveKit JWT
+                       ✓ → sign the LiveKit JWT, identity = learner_<uuid>
 ```
+
+One cookie carries two facts — *you passed the passcode* and *you are this learner* — because they
+were always issued together and expired apart. The previous design had a separate unlock cookie and
+learner cookie, which made "authenticated but anonymous" and "identified but locked out" both
+representable, and both meaningless.
 
 Properties this buys:
 
 - The passcode never reaches client-side JavaScript.
 - The cookie cannot be forged without `LIVEKIT_API_SECRET`, which never leaves the server.
-- No database, no KV store, no session table — the secret *is* the state.
+- **Rotating `APP_PASSCODE` invalidates every live session**, because the passcode is part of the
+  HMAC key. A rotation that left existing sessions running would not be a rotation.
+- No session table: the signature *is* the state.
 - `TokenSource.endpoint()` is same-origin, so the cookie is attached automatically. No SDK
   modification, no custom headers.
 
-**Residual risk, accepted deliberately:** `/api/unlock` has no rate limiting, so the passcode is
-brute-forceable given time. That is fine for a link shared with people you know and *not* fine for a
-link posted publicly. Closing it properly means IP rate limiting on the unlock route, which needs a KV
-store (Vercel KV or Upstash) — currently the only reason this system has no database.
+**Residual risks, accepted deliberately:**
+
+- `/api/login` has no rate limiting, so the passcode is brute-forceable given time. Fine for a link
+  shared with people you know and *not* fine for a link posted publicly. Closing it means IP rate
+  limiting, which needs a KV store (Vercel KV or Upstash).
+- **A username is an identifier, not a credential.** Everyone shares one passcode, so anyone holding
+  it can sign in as anyone else and read their dashboard. This design authenticates *the group* and
+  merely distinguishes *the members*. Going public means real per-user credentials — at that point
+  the shared passcode is the weak link, and no amount of cookie hardening compensates.
 
 ---
 
@@ -349,6 +379,11 @@ These are the choices most likely to be "cleaned up" by someone who doesn't know
 | **CEFR smoothed over sessions before display** | show the latest session's estimate | A single session's estimate genuinely swings A2↔B2 on topic alone — the learner didn't change, the conversation did. A level that lurches after a good chat teaches the learner the dashboard is nonsense. Raw values are stored; smoothing happens on read, so improving the smoothing never needs a backfill. |
 | **Metrics return `None`, never `0.0`, when unmeasurable** | default to zero | Zero plots as a real data point. A learner who said twelve words would show a triumphant dip in the error-rate chart at the exact moment we knew least about them. `NULL` renders as a gap, which is the truth. |
 | **Taxonomy in JSON, not in Python** | keep the dataclasses | The dashboard needs the same labels and advice, and Vercel deploys from `web/` and cannot read files above it. One JSON file plus `scripts/sync_taxonomy.py` beats two hand-maintained lists that drift. |
+| **Identity keyed to a USERNAME, not to the browser** | keep the per-browser cookie (it needed no login screen) | Progress that lives in a cookie is progress that does not exist on your other phone. The same person on a laptop and a phone was two learners with two disjoint histories, and neither one was right. A username costs a login screen and buys the thing the feature is *for* — a history that is yours, wherever you open it. |
+| **One session cookie, not an unlock cookie + a learner cookie** | keep them separate; they authenticate different things | They were always issued together and always expired apart, which made "authenticated but anonymous" and "identified but locked out" both representable and both meaningless. Folding the passcode into the HMAC key means one signature proves both facts — and makes rotating the passcode actually revoke live sessions, which two independent cookies could not. |
+| **Passcode checked *before* the username is validated** | validate the input first, it's cheaper | Validating the username first leaks which usernames exist, through the difference between "no such user" and "wrong passcode" — to someone who does not have the passcode at all. The cheap check goes second on purpose. |
+| **`AppShell` takes an `active` tab as a prop** | read `usePathname()` in the header | `usePathname` is a client hook, and using it would drag the entire header — nav, learner chip, sign-out — into the client bundle to answer a question the page already knows the answer to. The page states which tab it is; the header stays a server component. |
+| **Sign-out clears the cookie and deletes nothing** | also clear the learner's local data | There is no local data to clear, and that is the point. The history lives in Postgres keyed by username, so signing out is genuinely reversible: sign back in, anywhere, and it is all there. |
 
 ---
 
@@ -363,9 +398,11 @@ Ranked by how much time they can waste.
 | Agent goes **silent mid-conversation** | `EdgeTTSStream._run` logs and *returns* on synthesis failure rather than raising — a failed TTS produces silence, not an error | `lk agent logs` |
 | Deploy "succeeded", agent unreachable | missing secret → pydantic error at import → crashloop | `lk agent logs` for `registered worker` |
 | Passcode change "didn't save" | Vercel env vars don't apply to existing deployments | redeploy after `vercel env add` |
-| Everyone gets HTTP 500 on connect | the template's production `throw` in the token route is back | the passcode gate in `lib/auth.ts` must be wired in |
+| Everyone gets HTTP 500 on connect | the template's production `throw` in the token route is back | the session gate in `lib/session.ts` must be wired in |
 | Local dev suddenly can't find `APP_PASSCODE` | `vercel integration add` overwrote `web/.env.local` — and `vercel env pull` "fixes" it with empty strings, because those keys are *sensitive* | check value **lengths** in `web/.env.local`, not key presence; recover from the repo-root `.env` and §9 |
-| Conversation happened, **no progress row appeared** | the visitor had no profile (anonymous identity → deliberately untracked), or said < 30 words (`MIN_WORDS_FOR_GRADING`), or `PROGRESS_DATABASE_URL` is set on Vercel but not on the *agent* | `lk agent logs` — `run_analysis` logs which of these it took |
+| **Everyone is signed out at once**, and no one can sign back in with the old passcode | expected: `APP_PASSCODE` is part of the session HMAC key, so rotating it invalidates every cookie | not a bug — announce the new passcode |
+| Conversation happened, **no progress row appeared** | said < 30 words (`MIN_WORDS_FOR_GRADING`), or `PROGRESS_DATABASE_URL` is set on Vercel but not on the *agent* | `lk agent logs` — `run_analysis` logs which of these it took |
+| A learner's history **vanished** after the login screen shipped | identity moved from a browser cookie to a username. `schema.sql` backfills a username from each old learner's display name, but only for the **oldest** claimant of a duplicated name | sign in as the old display name, lowercased; check `SELECT username, display_name FROM learners` |
 | Progress rows stop appearing after a schema change | the agent's `INSERT` now fails, inside `repository.save_report`'s catch-all — which swallows it so a lost row can't take down a worker | apply `progress/schema.sql` **before** deploying the code that needs it |
 | `import progress.metrics` kills Python, **exit code 29, no traceback** | the `local_inference` `ExitProcess()` crash again — reached via `collector.py` | `progress/__init__.py` must import `TranscriptCollector` lazily via `__getattr__` |
 | Dashboard shows raw keys like `verb_tense` instead of "Verb tenses" | `web/lib/progress/taxonomy.json` is stale | `python scripts/sync_taxonomy.py` |
@@ -381,13 +418,13 @@ does not.
 | | |
 |---|---|
 | Live URL | <https://english-tutor-nine-green.vercel.app> |
-| Passcode | `ALEX2026` (rotate via `vercel env add APP_PASSCODE production --force`, then redeploy) |
+| Sign-in | any username + passcode `ALEX2026`. Rotate via `vercel env add APP_PASSCODE production --force`, then redeploy — note this **signs everyone out**, because the passcode is part of the session HMAC key (§6) |
 | LiveKit project | `demo-yygoau1f`, region `ap-south` (India West) |
 | LiveKit agent | `CA_e4HZqEcBFotF` |
 | Vercel project | `english-tutor` |
 | Agent resources | 2000m CPU / 4 GB, 1 replica |
 | Database | Neon `neon-violet-grass` (Vercel Marketplace), `ep-square-hat-atfqc9xa`, us-east-1 |
-| Schema | applied by hand from `progress/schema.sql`; 4 tables, no migration tool, no version table |
+| Schema | `python scripts/apply_schema.py`; 4 tables, idempotent, no version table |
 
 ### A trap when adding a Vercel integration
 
@@ -409,10 +446,12 @@ shortly after deploy and 1 while warm, so expect a cold start on the first call 
   biggest operational risk in the project: what is live corresponds to no commit anywhere.
 - **No CI, no push-to-deploy.** Connecting the GitHub repo to Vercel would give the web half
   automatic deploys and remove the "deployed from an uncommitted tree" problem for that half.
-- **No database migration tool.** `progress/schema.sql` is idempotent and applied by hand. A
-  destructive change (dropping or retyping a column) has to be hand-written, and nothing verifies
-  that the deployed code and the live schema agree.
-- **No rate limiting on `/api/unlock`** (see §6), so the passcode is brute-forceable given time.
+- **No database migration tool.** `progress/schema.sql` is idempotent and re-running it *is* the
+  migration. A destructive change (dropping or retyping a column) has to be hand-written, and nothing
+  verifies that the deployed code and the live schema agree.
+- **No rate limiting on `/api/login`** (see §6), so the passcode is brute-forceable given time.
+- **Usernames are identifiers, not credentials** (see §6). Anyone with the shared passcode can sign
+  in as anyone else. Real per-user auth is the fix, and it is a real fix, not a hardening pass.
 - **No custom domain.**
 - **Pronunciation is not scored** and cannot be with the current STT — see the header of
   `progress/metrics/fluency.py`. Azure Speech Pronunciation Assessment is the route if it's wanted.

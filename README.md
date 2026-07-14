@@ -12,9 +12,13 @@ the store! What did you get?"*) and always ends with a follow-up question to kee
 
 **<https://english-tutor-nine-green.vercel.app>** — passcode `ALEX2026`
 
-Enter your name and the passcode, tap **Start talking**, and allow the microphone. Nothing to
-install; it works on a phone. Alex greets you first, so if you hear the greeting, everything
-downstream is working.
+Sign in with **any username** you like plus the passcode. There is no registration step — the first
+time a username is used, it becomes yours. Then pick **Talk to Alex** and allow the microphone.
+Nothing to install; it works on a phone. Alex greets you first, so if you hear the greeting,
+everything downstream is working.
+
+Use the **same username on every device** and your progress follows you: phone and laptop are one
+learner, not two.
 
 The first call of the day can take a few seconds to connect — the agent worker scales to zero when
 idle and has to wake up.
@@ -219,7 +223,7 @@ secret stores**, none of which are synced, and the most common failures here are
 |---|---|---|---|---|
 | **Agent** | repo root | LiveKit Cloud (`CA_e4HZqEcBFotF`) | `lk agent deploy` | Python code or agent secrets change |
 | **Website** | `web/` | Vercel (`english-tutor`) | `cd web && vercel deploy --prod` | `web/` code or Vercel env change |
-| **Database** | `progress/schema.sql` | Neon (`neon-violet-grass`) | `psql` / one-off script | the schema changes |
+| **Database** | `progress/schema.sql` | Neon (`neon-violet-grass`) | `python scripts/apply_schema.py` | the schema changes |
 
 Three rules that explain most of the confusion:
 
@@ -284,14 +288,15 @@ Postgres aliases) on the project automatically, for all environments.
 ### 2. Apply the schema
 
 ```bash
-vercel env pull .env.tmp --environment=production   # get the connection string
-# use DATABASE_URL_UNPOOLED for DDL — the pooled URL goes through PgBouncer
-psql "$DATABASE_URL_UNPOOLED" -f progress/schema.sql
-rm .env.tmp
+python scripts/apply_schema.py     # reads PROGRESS_DATABASE_URL from the repo-root .env
 ```
 
-`progress/schema.sql` is idempotent (`CREATE TABLE IF NOT EXISTS` throughout), so re-running it is
-safe. It creates four tables: `learners`, `sessions`, `session_errors`, `learner_vocabulary`.
+`progress/schema.sql` is idempotent — `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, and
+guarded `UPDATE`s throughout — so **re-running it is how you migrate.** There is no version table
+and no Alembic: one database, one schema file. Write new DDL so that running the file twice is a
+no-op, and applying a change is just running the script again.
+
+It creates four tables: `learners`, `sessions`, `session_errors`, `learner_vocabulary`.
 
 ### 3. Give the agent the connection string
 
@@ -316,8 +321,8 @@ lk agent status     # want: Status = Running
 lk agent logs       # want: "registered worker", no traceback
 ```
 
-Then open the site, enter a name and the passcode, talk to Alex for a minute or two, hang up, and
-open `/progress`.
+Then open the site, sign in with a username and the passcode, talk to Alex for a minute or two, hang
+up, and open the **Dashboard**.
 
 ## Deploying a change
 
@@ -395,30 +400,34 @@ The agent has no rollback command. Redeploy from a known-good working tree.
 
 - **No CI and no push-to-deploy.** Connecting the GitHub repo to Vercel would give the web half
   automatic deploys on push. It hasn't been done.
-- **No rate limiting on `/api/unlock`**, so the passcode is brute-forceable given time. Fine for a
+- **No rate limiting on `/api/login`**, so the passcode is brute-forceable given time. Fine for a
   link shared with people you know; not fine posted publicly. Closing it needs IP rate limiting,
   which needs a KV store (Vercel KV or Upstash).
+- **Usernames are not passwords.** Everyone shares one passcode, so anyone who has it can sign in as
+  any username and read that learner's history. Going properly public means real per-user
+  credentials (Clerk, Auth.js), not a stronger cookie.
 - **No custom domain.**
-- **Database migrations are manual.** `progress/schema.sql` is idempotent but there is no migration
-  tool and no version table. A destructive schema change needs to be hand-written.
+- **Database migrations are manual.** `progress/schema.sql` is idempotent and re-running it applies
+  changes, but there is no version table and no down-migration. A destructive change is hand-written.
 
 ---
 
 ## Sharing it
 
-Send the link and the passcode. Recipients need no account and install nothing.
+Send the link and the passcode. Recipients need no account and install nothing — they pick a
+username on the way in, and it becomes theirs the first time they use it.
 
 The passcode is not decoration. `web/app/api/token/route.ts` mints a LiveKit token for whoever asks,
 and each token starts a real agent session that consumes your Groq, Tavily, and LiveKit quota. The
-upstream template refuses to run that route in production for exactly this reason. The gate replaces
-that refusal: `/api/unlock` checks the passcode and sets an httpOnly cookie, and the token route
-issues nothing without it. The passcode never reaches browser JavaScript.
+upstream template refuses to run that route in production for exactly this reason. Sign-in replaces
+that refusal: `/api/login` checks the passcode and sets an httpOnly, HMAC-signed cookie, and the
+token route issues nothing without it. The passcode never reaches browser JavaScript.
 
-Each visitor also gets a **learner profile** — a display name plus a signed, httpOnly cookie holding
-a random id. That is not a security boundary between people who already share the passcode; it exists
-so one learner cannot forge another's id and read their history, and so the agent knows whose
-progress it is recording. Identity is **per browser**: your phone and your laptop are separate
-profiles, and clearing cookies loses the link to your history.
+That one cookie also carries **who** you are. Identity is the **username**, not the browser, so the
+same username on a phone and a laptop is one learner with one history. It is not a security boundary
+between people who already share the passcode: it stops a learner *forging* another's id (you cannot
+sign a cookie without `LIVEKIT_API_SECRET`), and it tells the agent whose progress it is recording.
+Anyone with the passcode who types your username sees your dashboard.
 
 ## Project layout
 
@@ -441,21 +450,34 @@ progress/                   progress tracking — three strict layers
   taxonomy.json             the error taxonomy — SOURCE OF TRUTH, synced into web/
   schema.sql                the database schema
 
+scripts/apply_schema.py     applies schema.sql to Neon — this is "migrate"
 scripts/sync_taxonomy.py    copies taxonomy.json into web/
 scripts/seed_demo.py        seeds a demo learner with a known history
 
 web/                        the website (Next.js)
   app-config.ts             title, button copy, colors, which inputs are enabled
-  app/api/token/route.ts    mints the LiveKit JWT — gated, and carries the learner id
-  app/api/unlock/route.ts   checks the passcode, sets the unlock cookie
-  app/api/profile/route.ts  creates the learner, sets the signed learner cookie
-  app/api/progress/route.ts the dashboard's data, as JSON
+
+  app/page.tsx              signpost — redirects to /home or /login
+  app/login/page.tsx        username + passcode; the only door in
+  app/home/page.tsx         the hub — Talk to Alex, or Dashboard
+  app/call/page.tsx         the voice session
   app/progress/page.tsx     the dashboard
-  lib/auth.ts               the passcode/cookie logic
-  lib/learner.ts            learner identity (HMAC-signed cookie)
+
+  app/api/login/route.ts    checks the passcode, upserts the learner, signs the session cookie
+  app/api/logout/route.ts   drops the cookie (the history stays)
+  app/api/token/route.ts    mints the LiveKit JWT — gated, and carries the learner id
+  app/api/progress/route.ts the dashboard's data, as JSON
+
+  lib/session.ts            the passcode check, the signed session cookie, username rules
+  lib/guard.ts              requireLearnerId() — the one-liner at the top of every private page
+  lib/learners.ts           the only module that writes the learners table
   lib/db.ts                 the Neon handle
   lib/progress/             SQL (summary.ts) → pure analysis (analysis.ts) → types
-  components/progress/      rendering only
+
+  components/layout/        the app shell — header, nav, sign-out
+  components/auth/          the login form
+  components/home/          the two action cards
+  components/progress/      the dashboard — rendering only
 ```
 
 ### A note on `main.py`
@@ -530,10 +552,16 @@ to CRLF. Run `pnpm exec prettier --write .` from `web/`.
 **`/progress` says "Progress tracking isn't set up".** No `DATABASE_URL` on the website. This is a
 graceful degradation, not a crash — the tutor still works.
 
-**A session happened but no progress row appeared.** Three things to check, in order: was the visitor
-signed in (no profile → anonymous identity → deliberately not tracked); did they say at least 30
-words (below `MIN_WORDS_FOR_GRADING` the session is recorded but not graded); and is
-`PROGRESS_DATABASE_URL` set on the *agent* (not just on Vercel).
+**A session happened but no progress row appeared.** Two things to check, in order: did they say at
+least 30 words (below `MIN_WORDS_FOR_GRADING` the session is recorded but not graded); and is
+`PROGRESS_DATABASE_URL` set on the *agent* (not just on Vercel). Signing in is now mandatory, so the
+old "anonymous visitor, deliberately not tracked" cause no longer exists.
+
+**Someone's history "disappeared" after the login screen shipped.** Progress used to be keyed to a
+browser cookie; it is now keyed to a username. The schema backfills a username from each old
+learner's display name, so signing in as that name (lowercased) reconnects them. If two old learners
+had the same name, only the oldest kept it — the other starts fresh, which is the safe way to be
+wrong about who owns a history.
 
 **Importing anything from `progress/` kills Python with exit code 29 and no traceback.** That's the
 `local_inference` `ExitProcess()` crash. `progress/__init__.py` imports the collector lazily via

@@ -24,9 +24,11 @@ function AppSetup() {
 
 interface AppProps {
   appConfig: AppConfig;
+  /** For the greeting on the pre-call screen. Null when the learner's row couldn't be read. */
+  learnerName: string | null;
 }
 
-export function App({ appConfig }: AppProps) {
+export function App({ appConfig, learnerName }: AppProps) {
   const tokenSource = useMemo(() => {
     return typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string'
       ? getSandboxTokenSource(appConfig)
@@ -42,7 +44,7 @@ export function App({ appConfig }: AppProps) {
     <AgentSessionProvider session={session}>
       <AppSetup />
       <main className="grid h-svh grid-cols-1 place-content-center">
-        <ViewController appConfig={appConfig} />
+        <ViewController appConfig={appConfig} learnerName={learnerName} />
       </main>
       <StartAudioButton label="Start Audio" />
       <Toaster

@@ -38,6 +38,10 @@ from config.settings import settings  # noqa: E402  — must come after load_dot
 
 DEMO_NAME = "Demo learner (seeded)"
 
+# Sign in with this username (plus the shared passcode) to actually look at the seeded history.
+# Without it the demo learner exists in the database and is reachable by nobody.
+DEMO_USERNAME = "demo"
+
 # (session index) -> error categories present in that session
 ERROR_PATTERN: dict[int, list[str]] = {
     1: ["articles", "verb_tense", "prepositions"],
@@ -64,7 +68,7 @@ async def remove(conn: asyncpg.Connection) -> None:
     # ON DELETE CASCADE on sessions, session_errors and learner_vocabulary means the learner
     # row is the only thing that needs naming here.
     deleted = await conn.fetchval(
-        "DELETE FROM learners WHERE display_name = $1 RETURNING id", DEMO_NAME
+        "DELETE FROM learners WHERE username = $1 RETURNING id", DEMO_USERNAME
     )
     print(f"removed demo learner {deleted}" if deleted else "no demo learner to remove")
 
@@ -73,7 +77,9 @@ async def seed(conn: asyncpg.Connection) -> None:
     await remove(conn)  # idempotent: re-seeding replaces rather than duplicating
 
     learner_id = await conn.fetchval(
-        "INSERT INTO learners (display_name) VALUES ($1) RETURNING id", DEMO_NAME
+        "INSERT INTO learners (username, display_name) VALUES ($1, $2) RETURNING id",
+        DEMO_USERNAME,
+        DEMO_NAME,
     )
 
     # One session per day, ending yesterday — so the streak is real and the most recent
@@ -160,6 +166,7 @@ async def seed(conn: asyncpg.Connection) -> None:
     # "·" — printing them raises UnicodeEncodeError *after* the seed has already committed,
     # which looks alarmingly like the seed failed when it did not.
     print(f"seeded {len(ERROR_PATTERN)} sessions for learner {learner_id} ({DEMO_NAME})")
+    print(f"sign in as username '{DEMO_USERNAME}' with the app passcode to see the dashboard")
     print("\nExpected on /progress:")
     print("  - Verb tenses      -> 'Slipped back'    (gone for 4 sessions, back in #8)")
     print("  - Articles         -> 'Keeps happening' (every session)")

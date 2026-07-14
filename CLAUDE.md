@@ -18,11 +18,15 @@ session is analysed and stored, and the learner can see their progress over time
 |---|---|---|---|
 | Agent (the voice worker, and the *writer* of progress rows) | repo root | LiveKit Cloud, agent `CA_e4HZqEcBFotF` | `lk agent deploy` |
 | Frontend (the shareable link, and the *reader* of progress rows) | `web/` | Vercel, project `english-tutor` | `cd web && vercel deploy --prod` |
-| Database | `progress/schema.sql` | Neon, `neon-violet-grass` | apply the SQL by hand; no migration tool |
+| Database | `progress/schema.sql` | Neon, `neon-violet-grass` | `python scripts/apply_schema.py` |
 
 Both halves deploy from your **local working directory, not from git**. Uncommitted edits will ship.
 
-Live link: <https://english-tutor-nine-green.vercel.app> (passcode-gated, see `web/` below).
+Live link: <https://english-tutor-nine-green.vercel.app> (sign-in gated, see `web/` below).
+
+`schema.sql` is idempotent — `CREATE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, guarded `UPDATE`s
+— and re-running it **is** the migration mechanism. There is no version table and no Alembic: one
+database, one schema file. Write new DDL so that running the file twice is a no-op.
 
 ## Commands
 
@@ -45,6 +49,7 @@ There are no tests, linters, or formatters configured for the Python side.
 ### Scripts (repo root)
 
 ```bash
+python scripts/apply_schema.py            # apply progress/schema.sql to Neon (idempotent; this is "migrate")
 python scripts/sync_taxonomy.py           # copy progress/taxonomy.json into web/
 python scripts/sync_taxonomy.py --check   # non-zero exit if web/'s copy is stale
 python scripts/seed_demo.py               # seed a demo learner with a known 8-session history
@@ -181,7 +186,21 @@ server-side token minter. That is `app/api/token/route.ts`.
   that file rewrites everything to CRLF and the build dies with hundreds of `Delete ␍` errors. If a
   wall of those appears, the fix is `pnpm exec prettier --write .`, not editing the prettier config.
 
-#### The passcode gate (`lib/auth.ts`, `app/api/unlock/route.ts`) — don't remove it
+#### Routes
+
+| Route | What it is |
+|---|---|
+| `/` | a signpost — redirects to `/home` or `/login`. Renders nothing. |
+| `/login` | username + shared passcode. The only door in. |
+| `/home` | the hub: two cards, **Talk to Alex** and **Dashboard**, over a thin stat strip. |
+| `/call` | the voice session (the old `/`). |
+| `/progress` | the dashboard. |
+
+`/home` and `/progress` render inside `components/layout/app-shell.tsx` (header, nav, sign-out).
+The shell takes an `active` tab as a **prop** rather than reading the pathname, which keeps it a
+server component — a client-side `usePathname` would drag the whole header into the bundle.
+
+#### Sign-in (`lib/session.ts`, `app/api/login/route.ts`) — don't remove it
 
 The template's token route **deliberately throws in production**:
 
@@ -190,23 +209,38 @@ throw new Error('THIS API ROUTE IS INSECURE. DO NOT USE THIS ROUTE IN PRODUCTION
 ```
 
 It hands a room token to anyone who asks, and every token starts a real agent session that burns
-Groq, Tavily and LiveKit quota. Public Vercel URLs get crawled. The passcode gate is the
-authentication layer that warning demands, and it is what replaced the `throw`:
+Groq, Tavily and LiveKit quota. Public Vercel URLs get crawled. Sign-in is the authentication layer
+that warning demands, and it is what replaced the `throw`.
 
-1. `POST /api/unlock` compares the submitted passcode against `APP_PASSCODE` in constant time, and on
-   success sets an httpOnly cookie whose value is `sha256(passcode + ":" + LIVEKIT_API_SECRET)`.
+**One cookie, `tutor_session`, carries both facts** — that you knew the passcode, and who you are:
+
+```
+value = learnerId + "." + HMAC-SHA256(key = APP_PASSCODE + ":" + LIVEKIT_API_SECRET, msg = learnerId)
+```
+
+1. `POST /api/login` `{username, passcode}` → constant-time passcode compare, then upsert the
+   learner **by username**, then sign the cookie. It is the only place a session is ever minted.
 2. `POST /api/token` mints nothing without a valid cookie — it 401s.
 
-The passcode never reaches client-side JS, and the cookie can't be forged without the API secret. The
-cookie rides along automatically because `TokenSource.endpoint()` is same-origin; no header plumbing
-was needed.
+Consequences worth knowing before you touch it:
 
-Rotate the passcode with `vercel env add APP_PASSCODE production --force` **and redeploy** — env
-changes do not apply to existing deployments.
+- **Identity is the username, not the browser.** That is what makes progress follow a learner from
+  phone to laptop. The predecessor keyed identity to a per-browser cookie, so the same person on two
+  devices was two learners with two disjoint histories.
+- **Rotating `APP_PASSCODE` invalidates every existing session**, because the passcode is part of
+  the HMAC key. That is the point of a rotation. Rotate with
+  `vercel env add APP_PASSCODE production --force` **and redeploy** — env changes do not apply to
+  existing deployments.
+- **Usernames are not secret.** Everyone shares one passcode, so anyone holding it can sign in as
+  anyone else and read their history. This is a boundary against *forgery* (you cannot mint a cookie
+  for a learner without `LIVEKIT_API_SECRET`), not against a snoop. Correct for a link shared with
+  friends; wrong for a public app, where the fix is real per-user credentials, not a bigger HMAC.
+- The cookie rides along automatically because `TokenSource.endpoint()` is same-origin; no header
+  plumbing was needed.
 
-Known gap: `/api/unlock` has no rate limiting, so the passcode is brute-forceable given enough time.
-Acceptable for a link shared with friends; if this ever goes properly public, add IP rate limiting
-there (needs a KV store — Vercel KV or Upstash).
+Known gap: `/api/login` has no rate limiting, so the passcode is brute-forceable given enough time.
+If this ever goes properly public, add IP rate limiting there (needs a KV store — Vercel KV or
+Upstash).
 
 ### `progress/` — progress tracking
 
@@ -261,13 +295,13 @@ Mirrors the same three-layer split: `lib/progress/summary.ts` (SQL) → `lib/pro
 (pure functions) → `components/progress/` (rendering). The page and `/api/progress` both call
 `buildSummary`, so they can never disagree about a learner's level.
 
-- **Learner identity is a signed cookie, not an account** (`lib/learner.ts`). The value is
-  `learnerId.HMAC(learnerId, LIVEKIT_API_SECRET)`. The shared passcode still gates the app;
-  this only stops one learner forging another's id to read their history. It is per-browser —
-  phone and laptop are different profiles.
+- **Learner identity is the username** (`learners.username`, unique). Sign-in upserts on it, so
+  the same name on a phone and a laptop is the same learner with one history. See the sign-in
+  section above. `lib/learners.ts` is the only module that writes the `learners` table.
 - **`/api/token` puts the learner id in the participant identity** (`learner_<uuid>`). That is
-  the *only* channel by which the agent learns whose progress it is recording. A visitor with
-  no profile gets the anonymous identity and is simply not tracked.
+  the *only* channel by which the agent learns whose progress it is recording. Since sign-in is
+  mandatory, every session now has a learner — the old "connected but recorded nowhere"
+  anonymous case is unreachable.
 - **The per-session CEFR estimate is noisy and is never displayed raw.** `estimateLevel()`
   weights each session by grader confidence and recency. Showing the raw value would swing a
   learner A2→B2→B1 on topic alone and destroy trust in the whole dashboard.

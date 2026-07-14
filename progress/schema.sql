@@ -24,15 +24,70 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ---------------------------------------------------------------------------
 -- learners
 -- ---------------------------------------------------------------------------
--- Identity is a display name plus a signed cookie (web/lib/learner.ts). There are no
--- passwords: the shared passcode still gates the whole app, and this table only exists to
--- give one person's history a stable home. It is not an access-control boundary.
+-- Identity is the USERNAME. It is what a learner types at /login, and it is the reason their
+-- history follows them from phone to laptop: the same username resolves to the same row on
+-- any device, which a browser cookie could never do.
+--
+-- `username` is the canonical form (lowercased, restricted charset — see normalizeUsername in
+-- web/lib/session.ts) and is what we match on. `display_name` is the same name as the learner
+-- actually typed it, and exists only to be shown back to them.
+--
+-- There are still no per-user passwords. The shared passcode gates the app; the username then
+-- says whose locker you are opening. Anyone holding the passcode can type someone else's
+-- username, so this is a boundary against mix-ups, not against a determined snoop. That is the
+-- correct strength for a link shared with friends, and the wrong strength for a public app —
+-- see the note in web/lib/session.ts before opening this up.
 CREATE TABLE IF NOT EXISTS learners (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   display_name text        NOT NULL,
   created_at   timestamptz NOT NULL DEFAULT now(),
   last_seen_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Added after the cookie-only era. Nullable, because the rows that predate it have no
+-- username — and a NULL is exempt from the unique index, so any number of them can coexist.
+ALTER TABLE learners ADD COLUMN IF NOT EXISTS username text;
+
+-- Backfill: give each pre-username learner the username their display name implies, so that
+-- someone who practised as "Asad" before the login screen existed gets their old history back
+-- by logging in as "asad" rather than silently starting from zero.
+--
+-- Only the OLDEST claimant of each candidate name is backfilled (rn = 1). If two people both
+-- called themselves "sam", handing the name to one of them is a guess; handing it to both is
+-- impossible. The losers keep username NULL and start fresh, which is the safe way to be wrong.
+UPDATE learners AS l
+   SET username = c.candidate
+  FROM (
+        SELECT id,
+               left(
+                 regexp_replace(
+                   regexp_replace(lower(display_name), '[^a-z0-9._-]', '', 'g'),
+                   '^[^a-z0-9]+', ''
+                 ),
+                 24
+               ) AS candidate,
+               row_number() OVER (
+                 PARTITION BY left(
+                   regexp_replace(
+                     regexp_replace(lower(display_name), '[^a-z0-9._-]', '', 'g'),
+                     '^[^a-z0-9]+', ''
+                   ),
+                   24
+                 )
+                 ORDER BY created_at
+               ) AS rn
+          FROM learners
+         WHERE username IS NULL
+       ) AS c
+ WHERE l.id = c.id
+   AND c.rn = 1
+   AND length(c.candidate) >= 2
+   AND NOT EXISTS (SELECT 1 FROM learners x WHERE x.username = c.candidate);
+
+-- A plain unique index on the column, not on lower(username): the application stores the
+-- canonical lowercase form, so the column IS the canonical form. This also makes the index
+-- usable as an `ON CONFLICT (username)` arbiter, which is how login upserts (web/lib/learners.ts).
+CREATE UNIQUE INDEX IF NOT EXISTS learners_username_key ON learners (username);
 
 -- ---------------------------------------------------------------------------
 -- sessions — one row per completed practice conversation

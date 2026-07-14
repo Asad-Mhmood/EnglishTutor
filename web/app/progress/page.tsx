@@ -1,103 +1,67 @@
-import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { AppShell } from '@/components/layout/app-shell';
 import { Dashboard } from '@/components/progress/dashboard';
 import { Button } from '@/components/ui/button';
-import { UNLOCK_COOKIE, isUnlocked } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { LEARNER_COOKIE, learnerIdFrom } from '@/lib/learner';
+import { requireLearnerId } from '@/lib/guard';
+import { getLearner } from '@/lib/learners';
 import { buildSummary } from '@/lib/progress/summary';
 
 /**
  * /progress — the learner's dashboard.
  *
  * Server-rendered by calling the same analysis code /api/progress uses, rather than fetching
- * its own API over HTTP. A server component fetching its own route would mean an extra
- * network hop, cookie forwarding, and a second failure mode for no gain. The API route exists
- * for clients that want JSON; this page shares the logic beneath it.
+ * its own API over HTTP. A server component fetching its own route would mean an extra network
+ * hop, cookie forwarding, and a second failure mode for no gain. The API route exists for
+ * clients that want JSON; this page shares the logic beneath it.
+ *
+ * The old "no profile yet" gate is gone, and could not fire if it were still here: you cannot
+ * reach this page without a session, and a session names a learner. Sign-in creates the row.
  */
 
 export const dynamic = 'force-dynamic';
 
-function Gate({ title, body, cta }: { title: string; body: string; cta: React.ReactNode }) {
-  return (
-    <main className="grid min-h-svh place-content-center px-6">
-      <div className="mx-auto max-w-md text-center">
-        <h1 className="text-foreground text-xl font-semibold">{title}</h1>
-        <p className="text-muted-foreground mt-3 text-sm leading-6">{body}</p>
-        <div className="mt-6">{cta}</div>
-      </div>
-    </main>
-  );
-}
-
 export default async function ProgressPage() {
-  const cookieStore = await cookies();
-
-  if (!isUnlocked(cookieStore.get(UNLOCK_COOKIE)?.value)) {
-    return (
-      <Gate
-        title="Locked"
-        body="Enter the passcode on the home page first, then come back here."
-        cta={
-          <Button asChild className="rounded-full">
-            <Link href="/">Go to the tutor</Link>
-          </Button>
-        }
-      />
-    );
-  }
+  const learnerId = await requireLearnerId();
 
   const sql = getDb();
   if (!sql) {
-    // No DATABASE_URL. The tutor still works — progress tracking is the optional half — so
-    // say exactly that rather than showing a broken chart or a 500.
+    // No DATABASE_URL. The tutor still works — progress tracking is the optional half — so say
+    // exactly that rather than showing a broken chart or a 500.
     return (
-      <Gate
-        title="Progress tracking isn't set up"
-        body="This server has no database configured, so sessions aren't being recorded. The tutor itself works fine."
-        cta={
-          <Button asChild className="rounded-full">
-            <Link href="/">Go to the tutor</Link>
+      <main className="bg-background grid min-h-svh place-content-center px-6">
+        <div className="mx-auto max-w-md text-center">
+          <h1 className="text-foreground text-xl font-semibold">
+            Progress tracking isn&apos;t set up
+          </h1>
+          <p className="text-muted-foreground mt-3 text-sm leading-6">
+            This server has no database configured, so sessions aren&apos;t being recorded. The
+            tutor itself works fine.
+          </p>
+          <Button asChild className="mt-6 rounded-full">
+            <Link href="/call">Talk to Alex</Link>
           </Button>
-        }
-      />
+        </div>
+      </main>
     );
   }
 
-  const learnerId = learnerIdFrom(cookieStore.get(LEARNER_COOKIE)?.value);
-  if (!learnerId) {
-    return (
-      <Gate
-        title="No profile yet"
-        body="Tell Alex your name on the home page and your sessions will start being tracked from then on."
-        cta={
-          <Button asChild className="rounded-full">
-            <Link href="/">Go to the tutor</Link>
-          </Button>
-        }
-      />
-    );
+  const learner = await getLearner(sql, learnerId);
+  if (!learner) {
+    redirect('/login');
   }
 
   const summary = await buildSummary(sql, learnerId);
-
   if (!summary) {
-    return (
-      <Gate
-        title="No profile yet"
-        body="We couldn't find your profile. Head back and introduce yourself again."
-        cta={
-          <Button asChild className="rounded-full">
-            <Link href="/">Go to the tutor</Link>
-          </Button>
-        }
-      />
-    );
+    // getLearner just found the row, so buildSummary can only miss it in a genuine race with a
+    // deletion. Rare enough to treat as a stale session rather than model as a real state.
+    redirect('/login');
   }
 
   return (
-    <main className="bg-background min-h-svh">
+    <AppShell learner={learner} active="progress">
       <Dashboard summary={summary} />
-    </main>
+    </AppShell>
   );
 }

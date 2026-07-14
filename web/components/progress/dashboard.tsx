@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { StatTile } from '@/components/progress/stat-tile';
 import { TrendChart } from '@/components/progress/trend-chart';
 import { StrengthCard, WeaknessCard } from '@/components/progress/weakness-card';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { CEFR_LEVELS, type ProgressSummary } from '@/lib/progress/types';
 
 /**
@@ -18,6 +20,9 @@ import { CEFR_LEVELS, type ProgressSummary } from '@/lib/progress/types';
  *   3. Am I getting better?   → the trend charts
  *
  * A learner who only reads the first screen still gets the useful part.
+ *
+ * Rendered inside AppShell, which owns the page frame — the width, padding and header live
+ * there, not here.
  */
 
 const LEVEL_BLURB: Record<string, string> = {
@@ -29,35 +34,25 @@ const LEVEL_BLURB: Record<string, string> = {
   C2: 'Effortless and idiomatic.',
 };
 
-function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="bg-card border-border rounded-xl border p-4">
-      <div className="text-muted-foreground text-xs leading-4">{label}</div>
-      <div className="text-card-foreground mt-1.5 text-2xl leading-none font-semibold">{value}</div>
-      {hint && <div className="text-muted-foreground mt-1.5 text-[11px] leading-4">{hint}</div>}
-    </div>
-  );
-}
-
 function LevelCard({ summary }: { summary: ProgressSummary }) {
   const { level } = summary;
 
   if (!level.band) {
     return (
-      <div className="bg-card border-border rounded-xl border p-6">
+      <Card className="p-6">
         <h2 className="text-card-foreground text-sm font-semibold">Your level</h2>
         <p className="text-muted-foreground mt-2 text-sm leading-6">
           Not enough to go on yet. Have a proper conversation with Alex — a few minutes of real
           talking — and an estimate will appear here.
         </p>
-      </div>
+      </Card>
     );
   }
 
   const percent = Math.round(level.confidence * 100);
 
   return (
-    <div className="bg-card border-border rounded-xl border p-6">
+    <Card className="p-6">
       <h2 className="text-card-foreground text-sm font-semibold">Your level</h2>
 
       <div className="mt-3 flex items-baseline gap-3">
@@ -110,20 +105,20 @@ function LevelCard({ summary }: { summary: ProgressSummary }) {
           </>
         )}
       </p>
-    </div>
+    </Card>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="mx-auto max-w-md py-24 text-center">
+    <div className="mx-auto max-w-md py-20 text-center">
       <h1 className="text-foreground text-xl font-semibold">No practice yet</h1>
       <p className="text-muted-foreground mt-3 text-sm leading-6">
         Have your first conversation with Alex and your progress will show up here — your level, the
         mistakes worth fixing, and how both change over time.
       </p>
       <Button asChild size="lg" className="mt-6 rounded-full">
-        <Link href="/">Start talking</Link>
+        <Link href="/call">Start talking</Link>
       </Button>
     </div>
   );
@@ -137,12 +132,10 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-5 py-10 md:px-8">
+    <div>
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-            {summary.learner.displayName}&apos;s progress
-          </h1>
+          <h1 className="text-foreground text-3xl font-semibold tracking-tight">Your progress</h1>
           {summary.latestSummary && (
             <p className="text-muted-foreground mt-2 max-w-prose text-sm leading-6">
               {summary.latestSummary}
@@ -150,7 +143,7 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
           )}
         </div>
         <Button asChild className="rounded-full">
-          <Link href="/">Practise again</Link>
+          <Link href="/call">Practise again</Link>
         </Button>
       </header>
 

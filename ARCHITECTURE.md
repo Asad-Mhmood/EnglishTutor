@@ -154,19 +154,35 @@ Edge TTS which needs no key at all.
 
 ## 5. Deployment pipeline
 
-### The two commands
+> **`README.md` is the runbook** — copy-pasteable commands, first-time setup in order, the rotation
+> and rollback procedures. This section is the *model*: what the pipeline is, why it's shaped this
+> way, and where it lies to you. Read this to understand it; read the README to operate it.
 
-```bash
-lk agent deploy                    # agent  → LiveKit Cloud
-cd web && vercel deploy --prod     # web    → Vercel
+### Three targets, two of them deployable
+
+```
+   repo root ──── lk agent deploy ─────────▶  LiveKit Cloud    (the writer)
+   web/      ──── vercel deploy --prod ────▶  Vercel           (the reader)
+   progress/schema.sql ─── psql, by hand ──▶  Neon Postgres    (provisioned once)
 ```
 
-Both build from your **local working directory**, not from git. There is no CI, no GitHub trigger, no
-branch that represents production. Consequences worth internalising:
+The database is **not** part of either deploy. Nothing in `lk agent deploy` or `vercel deploy` runs a
+migration, checks the schema, or notices that it's out of date. `progress/schema.sql` is applied by
+hand, is idempotent (`CREATE TABLE IF NOT EXISTS` throughout), and has no version table. A schema
+change is a manual, out-of-band step that you must remember to do **before** deploying the code that
+depends on it — otherwise the agent will happily run and fail every insert into the shutdown
+callback's swallowed exception handler, and the only symptom is progress rows that never appear.
+
+### Both halves build from your working tree, not from git
+
+There is no CI, no GitHub trigger, no branch that represents production. Consequences worth
+internalising:
 
 - Uncommitted local edits **will** ship if you deploy.
 - The deployed artifact may correspond to no commit that exists anywhere.
 - A teammate cloning the repo cannot reproduce what is live without your working tree.
+- The two halves can silently drift to different versions of the same change, because deploying one
+  does not deploy the other.
 
 Connecting the repo to GitHub would give push-to-deploy on Vercel. That has not been done.
 
@@ -209,7 +225,7 @@ vercel deploy --prod
 The build is strict: a formatting violation fails it, not just a type error. Run `pnpm build` locally
 before deploying.
 
-### Secrets: three stores, none of them synced
+### Secrets: four stores, none of them synced
 
 This is the part that bites people. Adding a key to `.env` makes it work locally and then fail in
 production, silently as far as your terminal is concerned.
@@ -217,13 +233,19 @@ production, silently as far as your terminal is concerned.
 | Store | Contains | How to write it | Read by |
 |---|---|---|---|
 | `.env` (repo root, gitignored) | everything | edit the file | local `main.py` runs only |
+| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file | local `pnpm dev` only |
 | LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
 | Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` | the deployed web app |
 
 The agent and the web app reach the **same Neon database under different names** —
 `PROGRESS_DATABASE_URL` on the agent (the writer) and `DATABASE_URL` on Vercel (the reader,
 and the name the Neon integration provisions automatically). The agent writes progress rows at
-the end of each session; the web app only ever reads them.
+the end of each session; the web app only ever reads them. They never talk to each other directly.
+
+Use the **pooled** URL for the agent and the **unpooled** one for DDL. Neon's default `DATABASE_URL`
+points at PgBouncer in transaction-pooling mode, which cannot support the prepared statements asyncpg
+caches by default — hence `statement_cache_size=0` in `progress/repository.py`. Without it you get
+`prepared statement "__asyncpg_stmt_1__" does not exist`, intermittently, under concurrency.
 
 Notes learned the hard way:
 
@@ -232,15 +254,32 @@ Notes learned the hard way:
   from the agent's secret list yet mandatory on Vercel.
 - **Vercel env changes do not affect existing deployments.** Rotating `APP_PASSCODE` requires a
   redeploy to take effect. This is not obvious and looks like the change "didn't save".
+- **`vercel integration add` overwrites `web/.env.local`** with only the integration's variables,
+  destroying the LiveKit keys and the passcode. `vercel env pull` cannot restore them: they are marked
+  *sensitive* and come back as empty strings, so the file looks repaired and is not. See §9.
 
 ### Adding a new secret — the checklist
 
-1. Add it to `.env` (local).
+1. Add it to `.env` (local agent) and/or `web/.env.local` (local website).
 2. Add it to `config/settings.py` as a required field **only if the agent needs it** — remember this
-   turns a missing value into a production crashloop.
+   turns a missing value into a production crashloop. Think about whether the feature it powers is a
+   precondition for the tutor or merely a feature *of* it; `PROGRESS_DATABASE_URL` is optional for
+   exactly that reason.
 3. Push it to whichever store the *runtime that reads it* uses (table above).
-4. Redeploy that half.
+4. Redeploy that half. **Env changes never apply to existing deployments.**
 5. Confirm: `lk agent logs` → `registered worker`, or re-test the web flow.
+
+### Changing the database schema — the checklist
+
+There is no migration tool, so the ordering is on you:
+
+1. Edit `progress/schema.sql`. Keep it idempotent.
+2. Apply it against the **unpooled** URL: `psql "$DATABASE_URL_UNPOOLED" -f progress/schema.sql`.
+3. *Then* deploy the code that depends on it. The reverse order gives you an agent whose inserts fail
+   inside a swallowed exception handler — no crash, no error in the UI, just progress rows that never
+   appear.
+4. If the new column is only a metric, you probably don't need any of this: unknown metric keys land
+   in the `sessions.extra` JSONB column automatically. Promote to a real column later.
 
 ---
 
@@ -325,6 +364,11 @@ Ranked by how much time they can waste.
 | Deploy "succeeded", agent unreachable | missing secret → pydantic error at import → crashloop | `lk agent logs` for `registered worker` |
 | Passcode change "didn't save" | Vercel env vars don't apply to existing deployments | redeploy after `vercel env add` |
 | Everyone gets HTTP 500 on connect | the template's production `throw` in the token route is back | the passcode gate in `lib/auth.ts` must be wired in |
+| Local dev suddenly can't find `APP_PASSCODE` | `vercel integration add` overwrote `web/.env.local` — and `vercel env pull` "fixes" it with empty strings, because those keys are *sensitive* | check value **lengths** in `web/.env.local`, not key presence; recover from the repo-root `.env` and §9 |
+| Conversation happened, **no progress row appeared** | the visitor had no profile (anonymous identity → deliberately untracked), or said < 30 words (`MIN_WORDS_FOR_GRADING`), or `PROGRESS_DATABASE_URL` is set on Vercel but not on the *agent* | `lk agent logs` — `run_analysis` logs which of these it took |
+| Progress rows stop appearing after a schema change | the agent's `INSERT` now fails, inside `repository.save_report`'s catch-all — which swallows it so a lost row can't take down a worker | apply `progress/schema.sql` **before** deploying the code that needs it |
+| `import progress.metrics` kills Python, **exit code 29, no traceback** | the `local_inference` `ExitProcess()` crash again — reached via `collector.py` | `progress/__init__.py` must import `TranscriptCollector` lazily via `__getattr__` |
+| Dashboard shows raw keys like `verb_tense` instead of "Verb tenses" | `web/lib/progress/taxonomy.json` is stale | `python scripts/sync_taxonomy.py` |
 
 The common thread: **this system fails quietly.** VAD failure, TTS failure, and dispatch failure all
 produce silence rather than an exception. When something is wrong, assume the logs know and the UI
@@ -332,7 +376,7 @@ does not.
 
 ---
 
-## 9. Current deployment (as of 2026-07-13)
+## 9. Current deployment (as of 2026-07-14)
 
 | | |
 |---|---|
@@ -343,6 +387,7 @@ does not.
 | Vercel project | `english-tutor` |
 | Agent resources | 2000m CPU / 4 GB, 1 replica |
 | Database | Neon `neon-violet-grass` (Vercel Marketplace), `ep-square-hat-atfqc9xa`, us-east-1 |
+| Schema | applied by hand from `progress/schema.sql`; 4 tables, no migration tool, no version table |
 
 ### A trap when adding a Vercel integration
 
@@ -360,8 +405,17 @@ shortly after deploy and 1 while warm, so expect a cold start on the first call 
 
 ### Not yet done
 
-- Nothing is committed to git; both halves were deployed from the local working tree.
-- No CI, no push-to-deploy. Connecting the GitHub repo to Vercel would give the web half automatic
-  deploys.
-- No rate limiting on `/api/unlock` (see §6).
-- No custom domain.
+- **Nothing is committed to git.** All three deploys went from the local working tree. This is the
+  biggest operational risk in the project: what is live corresponds to no commit anywhere.
+- **No CI, no push-to-deploy.** Connecting the GitHub repo to Vercel would give the web half
+  automatic deploys and remove the "deployed from an uncommitted tree" problem for that half.
+- **No database migration tool.** `progress/schema.sql` is idempotent and applied by hand. A
+  destructive change (dropping or retyping a column) has to be hand-written, and nothing verifies
+  that the deployed code and the live schema agree.
+- **No rate limiting on `/api/unlock`** (see §6), so the passcode is brute-forceable given time.
+- **No custom domain.**
+- **Pronunciation is not scored** and cannot be with the current STT — see the header of
+  `progress/metrics/fluency.py`. Azure Speech Pronunciation Assessment is the route if it's wanted.
+- **A demo learner is seeded in the production database** (`Demo learner (seeded)`, 8 fake sessions).
+  It is unreachable without its signed cookie, so it is invisible to real users. Remove with
+  `python scripts/seed_demo.py --remove`.

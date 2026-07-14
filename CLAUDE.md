@@ -2,20 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-See `ARCHITECTURE.md` for the system diagram, the request lifecycle, the deployment pipeline, the
-secret-store layout, and the decision log (why the non-obvious choices were made).
+- `README.md` — the deployment runbook. **Read its Deployment section before deploying anything.**
+- `ARCHITECTURE.md` — system diagram, request lifecycle, secret-store layout, and the decision log
+  (why the non-obvious choices were made, and what not to "clean up").
 
 ## What this is
 
 A LiveKit voice agent that acts as a conversational English tutor ("Alex"). A user joins a LiveKit
-room and speaks; the agent transcribes, generates a reply, and speaks back.
+room and speaks; the agent transcribes, generates a reply, and speaks back. After the call ends, the
+session is analysed and stored, and the learner can see their progress over time at `/progress`.
 
-**There are two separately deployed halves.** Changing one does not redeploy the other:
+**Three deploy targets. The two halves are independent — changing one does not redeploy the other:**
 
 | | Code | Runs on | Deploy with |
 |---|---|---|---|
-| Agent (the voice worker) | repo root | LiveKit Cloud, agent `CA_e4HZqEcBFotF` | `lk agent deploy` |
-| Frontend (the shareable link) | `web/` | Vercel, project `english-tutor` | `cd web && vercel deploy --prod` |
+| Agent (the voice worker, and the *writer* of progress rows) | repo root | LiveKit Cloud, agent `CA_e4HZqEcBFotF` | `lk agent deploy` |
+| Frontend (the shareable link, and the *reader* of progress rows) | `web/` | Vercel, project `english-tutor` | `cd web && vercel deploy --prod` |
+| Database | `progress/schema.sql` | Neon, `neon-violet-grass` | apply the SQL by hand; no migration tool |
+
+Both halves deploy from your **local working directory, not from git**. Uncommitted edits will ship.
 
 Live link: <https://english-tutor-nine-green.vercel.app> (passcode-gated, see `web/` below).
 
@@ -37,6 +42,19 @@ exposes these subcommands:
 
 There are no tests, linters, or formatters configured for the Python side.
 
+### Scripts (repo root)
+
+```bash
+python scripts/sync_taxonomy.py           # copy progress/taxonomy.json into web/
+python scripts/sync_taxonomy.py --check   # non-zero exit if web/'s copy is stale
+python scripts/seed_demo.py               # seed a demo learner with a known 8-session history
+python scripts/seed_demo.py --remove      # delete it again
+```
+
+`seed_demo.py` writes a history whose *expected* dashboard output is documented in its docstring
+(verb tenses must read "Slipped back", articles "Keeps happening", and so on). That makes it a
+known-answer test for the analysis layer, not just demo data.
+
 ### Frontend (`web/`)
 
 ```bash
@@ -48,12 +66,13 @@ pnpm build        # runs prettier + eslint + tsc; this is what Vercel runs
 
 ## Environment
 
-Secrets live in **three** places and they are not synced. Adding a key to `.env` alone will work
-locally and then fail in production.
+Secrets live in **four** places and none of them are synced. Adding a key to `.env` alone will work
+locally and then fail in production, silently as far as your terminal is concerned.
 
 | Where | Holds | Set with |
 |---|---|---|
-| `.env` (repo root, gitignored) | everything, for local runs | edit the file |
+| `.env` (repo root, gitignored) | everything, for local agent runs | edit the file |
+| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file |
 | LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` |
 | Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` |
 
@@ -65,6 +84,12 @@ means renaming it in `config/settings.py` or `web/lib/db.ts` too.
 LiveKit Cloud injects `LIVEKIT_*` into the agent container itself, which is why those are absent from
 the agent's secret list but required by Vercel. `lk agent update-secrets` **merges**, it does not
 replace.
+
+**`vercel integration add` overwrites `web/.env.local`.** It rewrites the file with only the
+integration's own variables, destroying `LIVEKIT_*` and `APP_PASSCODE`. `vercel env pull` cannot
+undo it — those are marked *sensitive* and come back as empty strings, so the file looks repaired and
+is not (check value lengths, not key presence). Recover `LIVEKIT_*` from the repo-root `.env` and the
+passcode from `ARCHITECTURE.md` §9. Back the file up before adding an integration.
 
 `config/settings.py` instantiates `Settings()` at module scope, so a missing `LIVEKIT_URL`,
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GROQ_API_KEY`, or `TAVILY_API_KEY` raises a pydantic

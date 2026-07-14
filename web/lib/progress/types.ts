@@ -86,6 +86,73 @@ export interface TrendPoint {
   cefrNumeric: number | null;
 }
 
+/**
+ * One session's value for one tracked parameter.
+ *
+ * `value` is what was actually measured. `smoothed` is the mean of the last few *known* values
+ * up to and including this one — the line a learner should read, because a single session's
+ * value swings on topic (see the note on estimateLevel: the same argument that stops us showing
+ * a raw per-session CEFR applies to every other parameter too).
+ *
+ * Both are null on a session where the measurement was impossible. Smoothing must never bridge
+ * a gap: averaging *across* an unknown session would invent a value for the one session where
+ * we knew nothing.
+ */
+export interface ParameterPoint {
+  date: string;
+  sessionIndex: number;
+  value: number | null;
+  smoothed: number | null;
+}
+
+/** What happened between two windows of sessions. */
+export interface ParameterDelta {
+  /** Mean of the baseline window. */
+  from: number;
+  /** Mean of the most recent window. */
+  to: number;
+  /**
+   * Signed fractional change against the baseline (-0.23 = down 23%).
+   *
+   * Null when a percentage would be a lie: an ordinal scale (CEFR), or a baseline of exactly
+   * zero, where every increase is an infinite one. The UI falls back to "from → to".
+   */
+  change: number | null;
+  /**
+   * 'improved' / 'slipped' only when the parameter HAS a good direction. 'moved' is the honest
+   * verdict for pace, sentence length and self-correction, where a change is real but not good
+   * or bad on its own. See GoodDirection in parameters.ts.
+   */
+  verdict: 'improved' | 'slipped' | 'steady' | 'moved';
+  /** How many sessions went into each side. Stated in the UI — a 2-session mean is not a 3. */
+  windowSize: number;
+}
+
+/** Everything needed to render one parameter's card and chart. Fully serialisable. */
+export interface ParameterSummary {
+  key: string;
+  group: string;
+  label: string;
+  caption: string;
+  goodDirection: 'higher' | 'lower' | null;
+  cumulative: boolean;
+  ordinal: boolean;
+  /** Mean of the last few known values — NOT the last session, which is one noisy number. */
+  current: number | null;
+  /** The headline: are you better than when you started, and by how much. */
+  sinceStart: ParameterDelta | null;
+  /** Are you still moving, or have you plateaued at your new level. */
+  recent: ParameterDelta | null;
+  /**
+   * Why there is no delta yet, in words, e.g. "Two more sessions and this can be compared."
+   * Shown verbatim: a learner with four sessions and an empty card deserves to know it is a
+   * matter of evidence and not a bug.
+   */
+  gate: string | null;
+  points: ParameterPoint[];
+  knownCount: number;
+}
+
 export interface LevelEstimate {
   band: CefrLevel | null;
   /** 1..6 on the CEFR scale, smoothed. Null until at least one session has been graded. */
@@ -110,6 +177,8 @@ export interface ProgressSummary {
   strengths: Strength[];
   weaknesses: Weakness[];
   trends: TrendPoint[];
+  /** Every parameter the learner can track, each with its series and its two deltas. */
+  parameters: ParameterSummary[];
   recentCorrections: ErrorRow[];
   /** Honesty surface. The UI shows this so a learner knows what the numbers rest on. */
   dataQuality: {

@@ -2,6 +2,7 @@ import type { Sql } from '@/lib/db';
 import {
   analyseMetricTrends,
   analyseWeaknesses,
+  buildParameters,
   buildTrend,
   currentStreakDays,
   estimateLevel,
@@ -97,7 +98,12 @@ export async function buildSummary(sql: Sql, learnerId: string): Promise<Progres
   const newestFirst = [...sessions].reverse();
 
   const { weaknesses, improving } = analyseWeaknesses(sessions, errors);
-  const { strengths: metricStrengths, slipping } = analyseMetricTrends(sessions);
+
+  // The parameters are built once and are the single source for both the charts and the prose:
+  // the strengths list is *derived* from them, so a parameter can never be charted as improving
+  // and described as slipping on the same page.
+  const parameters = buildParameters(sessions, errors);
+  const { strengths: metricStrengths, slipping } = analyseMetricTrends(parameters);
 
   const gradedSessions = sessions.filter((s) => s.cefr_estimate !== null).length;
 
@@ -138,6 +144,7 @@ export async function buildSummary(sql: Sql, learnerId: string): Promise<Progres
     ],
 
     trends: buildTrend(sessions),
+    parameters,
     recentCorrections: errors.slice(-MAX_RECENT_CORRECTIONS).reverse(),
 
     dataQuality: {

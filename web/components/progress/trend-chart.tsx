@@ -9,114 +9,61 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { TrendPoint } from '@/lib/progress/types';
+import { formatterFor } from '@/lib/progress/parameters';
+import type { ParameterSummary } from '@/lib/progress/types';
 
 /**
- * A single-series trend over sessions.
+ * One parameter, over the learner's sessions.
  *
- * SINGLE series, always. Two measures on one chart would need two y-scales, and a dual-axis
- * chart lets you manufacture any correlation you like by sliding one axis — it is the single
- * most misleading thing you can put on a dashboard. Two measures means two of these.
+ * TWO LINES, ONE MEASURE. The rule this file has always enforced — never two measures on one
+ * chart — still holds, and this does not break it: both lines are the SAME parameter on the SAME
+ * y-scale. The faint one is what each session measured; the bold one is the rolling mean, and it
+ * is the one the learner should read. A dual-axis chart lets you manufacture any correlation you
+ * like by sliding one axis, and remains the single most misleading thing you can put on a
+ * dashboard. Two *measures* still means two of these.
  *
- * Nulls are gaps, not zeros. `connectNulls={false}` is load-bearing: an ungraded session has
- * an *unknown* error rate, and joining the line straight across it would draw a confident
- * trend through the exact point where we knew nothing. The gap is the honest rendering.
+ * WHY BOTH LINES. Showing only the raw values asks a learner to eyeball a trend out of noise that
+ * is mostly topic, not skill. Showing only the smoothed line hides how much scatter it was drawn
+ * through, which is a quiet way of overclaiming. Drawing both says exactly what we know and how
+ * firmly we know it.
+ *
+ * Nulls are gaps, not zeros. `connectNulls={false}` is load-bearing on BOTH lines: an ungraded
+ * session has an *unknown* value, and joining the line straight across it would draw a confident
+ * trend through the exact point where we knew nothing.
  */
-
-export interface TrendChartProps {
-  title: string;
-  /** What the number means, in plain words. Shown under the title — never make them guess. */
-  caption: string;
-  data: TrendPoint[];
-  dataKey: keyof TrendPoint;
-  /** True when going down is good (error rate, hesitations). Flips the delta's colour. */
-  lowerIsBetter?: boolean;
-  format?: (value: number) => string;
-  domain?: [number | 'auto', number | 'auto'];
-}
 
 const AXIS_STYLE = {
   fontSize: 11,
   fill: 'var(--viz-axis)',
 } as const;
 
-function defaultFormat(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
 export function TrendChart({
-  title,
-  caption,
-  data,
-  dataKey,
-  lowerIsBetter = false,
-  format = defaultFormat,
-  domain = ['auto', 'auto'],
-}: TrendChartProps) {
-  // Every session stays in `points`, including the ones with a null value — that is what
-  // renders the gap. `known` is only used to decide whether there is enough to plot at all.
-  const points = data.map((point) => ({
-    sessionIndex: point.sessionIndex,
-    date: point.date,
-    value: point[dataKey] as number | null,
-  }));
+  parameter,
+  height = 176,
+}: {
+  parameter: ParameterSummary;
+  height?: number;
+}) {
+  const format = formatterFor(parameter.key);
 
-  const known = points.filter((p): p is typeof p & { value: number } => p.value !== null);
-
-  // Two points is the minimum for a line to mean anything. Below that, say so rather than
-  // drawing a single dot and letting it imply a trend.
-  if (known.length < 2) {
+  if (parameter.knownCount < 2) {
     return (
-      <figure className="bg-card border-border rounded-xl border p-5">
-        <figcaption className="mb-1">
-          <h3 className="text-card-foreground text-sm font-semibold">{title}</h3>
-          <p className="text-muted-foreground mt-0.5 text-xs leading-4">{caption}</p>
-        </figcaption>
-        <div className="text-muted-foreground flex h-40 items-center justify-center text-center text-xs">
-          {known.length === 0
-            ? 'Nothing to show yet.'
-            : 'One session so far — practise again to see a trend.'}
-        </div>
-      </figure>
+      <div
+        className="text-muted-foreground flex items-center justify-center text-center text-xs"
+        style={{ height }}
+      >
+        {parameter.knownCount === 0
+          ? 'Nothing to show yet.'
+          : 'One session so far — practise again to see a trend.'}
+      </div>
     );
   }
 
-  const first = known[0].value;
-  const last = known[known.length - 1].value;
-  const delta = last - first;
-  const improved = lowerIsBetter ? delta < 0 : delta > 0;
-  const unchanged = Math.abs(delta) < 1e-9;
-
   return (
-    <figure className="bg-card border-border rounded-xl border p-5">
-      <figcaption className="mb-3 flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-card-foreground text-sm font-semibold">{title}</h3>
-          <p className="text-muted-foreground mt-0.5 text-xs leading-4">{caption}</p>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-card-foreground text-lg leading-none font-semibold">
-            {format(last)}
-          </div>
-          {/* Words, not arrows, and not colour alone.
-              An arrow would fight the line: on the accuracy chart the good direction is DOWN,
-              so "↑ improving" would point the opposite way to the improving line it labels.
-              The word says what happened; colour is a redundant third channel, so colourblind
-              users and screen readers lose nothing. */}
-          {!unchanged && (
-            <div
-              className="mt-1 text-[11px] leading-none font-medium"
-              style={{ color: improved ? 'var(--viz-good)' : 'var(--viz-axis)' }}
-            >
-              {improved ? 'improving' : 'slipping'}
-            </div>
-          )}
-        </div>
-      </figcaption>
-
-      <div className="h-40 w-full">
+    <div>
+      <div style={{ height }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points} margin={{ top: 6, right: 8, bottom: 0, left: -20 }}>
+          <LineChart data={parameter.points} margin={{ top: 6, right: 8, bottom: 0, left: -20 }}>
             <CartesianGrid stroke="var(--viz-grid)" strokeDasharray="0" vertical={false} />
             <XAxis
               dataKey="sessionIndex"
@@ -129,8 +76,8 @@ export function TrendChart({
               tick={AXIS_STYLE}
               tickLine={false}
               axisLine={false}
-              width={44}
-              domain={domain}
+              width={48}
+              domain={['auto', 'auto']}
               tickFormatter={(v: number) => format(v)}
             />
             <Tooltip
@@ -143,21 +90,49 @@ export function TrendChart({
                 color: 'var(--popover-foreground)',
               }}
               labelFormatter={(v) => `Session ${v}`}
-              formatter={(value) => [format(Number(value)), title] as [string, string]}
+              formatter={(value, name) =>
+                [format(Number(value)), name === 'smoothed' ? 'Trend' : 'This session'] as [
+                  string,
+                  string,
+                ]
+              }
             />
+
+            {/* Each session as measured. Deliberately quiet: it is evidence, not the message. */}
+            <Line
+              type="linear"
+              dataKey="value"
+              stroke="var(--viz-axis)"
+              strokeWidth={1}
+              strokeOpacity={0.45}
+              dot={{ r: 2, fill: 'var(--viz-axis)', fillOpacity: 0.6, strokeWidth: 0 }}
+              activeDot={{ r: 4, stroke: 'var(--card)', strokeWidth: 2 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+
+            {/* The trend. This is the line the learner reads. */}
             <Line
               type="monotone"
-              dataKey="value"
+              dataKey="smoothed"
               stroke="var(--viz-series)"
-              strokeWidth={2}
-              dot={{ r: 3, fill: 'var(--viz-series)', strokeWidth: 0 }}
+              strokeWidth={2.5}
+              dot={false}
               activeDot={{ r: 5, stroke: 'var(--card)', strokeWidth: 2 }}
-              // A gap means "we don't know", not "it was zero". Never bridge it.
               connectNulls={false}
+              isAnimationActive={false}
             />
           </LineChart>
         </ResponsiveContainer>
       </div>
-    </figure>
+
+      {/* Said in words, because the difference between the two lines is the difference between
+          "this is what happened" and "this is what it means", and a learner who mistakes one for
+          the other will read noise as regression. */}
+      <p className="text-muted-foreground mt-2 text-[11px] leading-4">
+        Faint line: each session on its own. Bold line: your trend, averaged over three sessions.
+        Gaps are sessions too short to measure — not zeros.
+      </p>
+    </div>
   );
 }

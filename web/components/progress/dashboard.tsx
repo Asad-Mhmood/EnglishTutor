@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { ParameterCard } from '@/components/progress/parameter-card';
 import { StatTile } from '@/components/progress/stat-tile';
-import { TrendChart } from '@/components/progress/trend-chart';
 import { StrengthCard, WeaknessCard } from '@/components/progress/weakness-card';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { CEFR_LEVELS, type ProgressSummary } from '@/lib/progress/types';
+import { PARAMETER_GROUPS } from '@/lib/progress/parameters';
+import { CEFR_LEVELS, type ParameterSummary, type ProgressSummary } from '@/lib/progress/types';
 
 /**
  * The dashboard. Rendering only — every number on this page was decided in
@@ -124,8 +125,43 @@ function EmptyState() {
   );
 }
 
+/**
+ * One group of parameters — Accuracy, Vocabulary, Delivery, and so on.
+ *
+ * Grouped, and collapsed to cards rather than laid out as a wall of full-size charts. There are
+ * thirteen parameters plus one per kind of mistake; thirteen charts is a page nobody scrolls to
+ * the bottom of, and a parameter nobody reads is worth exactly as much as one nobody records.
+ * The card carries the answer — where you are, how far you have come — and the chart is one
+ * click away for the learner who wants to see the working.
+ */
+function ParameterGroupSection({
+  title,
+  blurb,
+  parameters,
+}: {
+  title: string;
+  blurb: string;
+  parameters: ParameterSummary[];
+}) {
+  if (parameters.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="mb-8">
+      <h3 className="text-foreground mb-1 text-base font-semibold">{title}</h3>
+      <p className="text-muted-foreground mb-4 max-w-prose text-sm leading-6">{blurb}</p>
+      <ul className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        {parameters.map((parameter) => (
+          <ParameterCard key={parameter.key} parameter={parameter} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function Dashboard({ summary }: { summary: ProgressSummary }) {
-  const { totals, trends, strengths, weaknesses, recentCorrections, dataQuality } = summary;
+  const { totals, parameters, strengths, weaknesses, recentCorrections, dataQuality } = summary;
 
   if (totals.sessions === 0) {
     return <EmptyState />;
@@ -197,42 +233,24 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
       )}
 
       <section className="mb-8">
-        <h2 className="text-foreground mb-1 text-lg font-semibold">Over time</h2>
-        <p className="text-muted-foreground mb-4 text-sm leading-6">
-          Each point is one session. Gaps are sessions too short to score — not zeros.
+        <h2 className="text-foreground mb-1 text-lg font-semibold">Everything you can track</h2>
+        <p className="text-muted-foreground mb-6 max-w-prose text-sm leading-6">
+          Each card compares you against your own earlier sessions — never against other learners,
+          and never against a target. Two numbers, because they answer different questions:{' '}
+          <span className="text-foreground font-medium">since you started</span> is whether you are
+          better than when you began, and{' '}
+          <span className="text-foreground font-medium">in your recent sessions</span> is whether
+          you are still moving or have settled where you are.
         </p>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <TrendChart
-            title="Grammar accuracy"
-            caption="Mistakes per 100 words. Lower is better — and it's per 100 words, so talking more never counts against you."
-            data={trends}
-            dataKey="errorsPer100Words"
-            lowerIsBetter
-            format={(v) => v.toFixed(1)}
+        {PARAMETER_GROUPS.map((group) => (
+          <ParameterGroupSection
+            key={group.key}
+            title={group.title}
+            blurb={group.blurb}
+            parameters={parameters.filter((parameter) => parameter.group === group.key)}
           />
-          <TrendChart
-            title="Vocabulary"
-            caption="Distinct words you've used, adding up across every session."
-            data={trends}
-            dataKey="cumulativeVocabulary"
-            format={(v) => String(Math.round(v))}
-          />
-          <TrendChart
-            title="Sentence complexity"
-            caption="Average words per sentence. Longer isn't automatically better — but a flat line near five means you're not stretching."
-            data={trends}
-            dataKey="meanSentenceLength"
-            format={(v) => v.toFixed(1)}
-          />
-          <TrendChart
-            title="Vocabulary range"
-            caption="Share of your words that go beyond everyday English."
-            data={trends}
-            dataKey="advancedWordRatio"
-            format={(v) => `${Math.round(v * 100)}%`}
-          />
-        </div>
+        ))}
       </section>
 
       {recentCorrections.length > 0 && (

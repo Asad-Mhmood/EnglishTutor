@@ -54,8 +54,13 @@ locally and then fail in production.
 | Where | Holds | Set with |
 |---|---|---|
 | `.env` (repo root, gitignored) | everything, for local runs | edit the file |
-| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY` | `lk agent update-secrets --secrets "K=V"` |
-| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE` | `vercel env add K production` |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` |
+
+Note the two halves reach the **same Neon database under different variable names**:
+`PROGRESS_DATABASE_URL` on the agent (which writes) and `DATABASE_URL` on Vercel (which reads,
+and is the name the Neon integration sets automatically). Renaming either to match the other
+means renaming it in `config/settings.py` or `web/lib/db.ts` too.
 
 LiveKit Cloud injects `LIVEKIT_*` into the agent container itself, which is why those are absent from
 the agent's secret list but required by Vercel. `lk agent update-secrets` **merges**, it does not
@@ -65,7 +70,10 @@ replace.
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GROQ_API_KEY`, or `TAVILY_API_KEY` raises a pydantic
 validation error at *import* time, before any agent code runs. On a deployed worker this means a
 missing secret is a **crashloop**, not a degraded agent. Everything else (`LLM_MODEL`, `STT_MODEL`,
-`TTS_VOICE`, `AGENT_GREETING`) has a default and can be overridden via env.
+`TTS_VOICE`, `AGENT_GREETING`, `GRADING_MODEL`) has a default and can be overridden via env.
+
+`PROGRESS_DATABASE_URL` is the deliberate exception: it is optional, so that a missing or broken
+database costs you progress tracking and **not the tutor**. See `progress/` below.
 
 After deploying, `lk agent logs` reaching `registered worker` with no traceback is the proof that
 every required secret was present.
@@ -174,6 +182,77 @@ changes do not apply to existing deployments.
 Known gap: `/api/unlock` has no rate limiting, so the passcode is brute-forceable given enough time.
 Acceptable for a link shared with friends; if this ever goes properly public, add IP rate limiting
 there (needs a KV store — Vercel KV or Upstash).
+
+### `progress/` — progress tracking
+
+Three layers, strict dependency order, nothing lower imports anything higher:
+
+```
+collector.py   COLLECTION   captures learner transcriptions during the live call
+metrics/       ANALYSIS     deterministic arithmetic (vocabulary, complexity, delivery)
+grading.py                  + one end-of-session LLM call (grammar errors, CEFR)
+scoring.py                  MIN_WORDS_FOR_GRADING lives here
+repository.py  PERSISTENCE  the only module that knows SQL
+```
+
+- **The deterministic metrics and the LLM grading are separate on purpose.** The metrics are
+  arithmetic: they cannot hallucinate and cannot invent a mistake. Grading can. A failed
+  grading run degrades to `grading = None` (stored NULL) while every metric still lands.
+- **Grading runs once, at shutdown, never per turn.** A 70B call mid-conversation is audible
+  as dead air. `ctx.add_shutdown_callback` in `agent/tutor.py` is where it fires.
+- **`PROGRESS_DATABASE_URL` is deliberately OPTIONAL in `config/settings.py`.** Every other
+  key is required, which turns a missing value into a crashloop — correct for `GROQ_API_KEY`,
+  wrong here. Progress tracking is a feature *of* the tutor, not a precondition for it, and a
+  Neon outage must not stop people speaking English. Do not "tidy" it into a required field.
+- **`progress/__init__.py` imports `TranscriptCollector` lazily, via `__getattr__`.** This is
+  load-bearing, not style. `collector.py` is the only module here that imports livekit, and on
+  Windows that import chain reaches `livekit.local_inference` → `ExitProcess()` (see below).
+  An eager import means `import progress.metrics` from any script kills the interpreter with
+  exit code 29 and no traceback.
+- **Metrics return `None`, never `0.0`, when a measurement is impossible.** A learner who said
+  nothing has an *unknown* type-token ratio. Zero would plot as a real point and read as
+  catastrophic regression on the trend chart.
+- **The error taxonomy lives in `progress/taxonomy.json`, not in Python.** The dashboard needs
+  the same labels and advice, and Vercel deploys from `web/` and cannot read files above it.
+  Edit the JSON, then run `python scripts/sync_taxonomy.py` to refresh `web/`'s copy.
+  `--check` mode fails if it's stale.
+- **Pronunciation is not scored, and must not be faked.** Whisper exposes no phonemes and is
+  explicitly trained to be robust to accents — the signal we'd need is the one it throws away.
+  `metrics/fluency.py` measures *delivery* (pace, hesitation, self-repair), which is real and
+  useful and is not pronunciation. Doing it properly needs Azure Speech Pronunciation
+  Assessment. See the header comment in that file before adding a "pronunciation score".
+
+Adding a new metric is one function: write it in `progress/metrics/`, decorate with `@metric`,
+import it in that package's `__init__.py`. It reaches the database with no migration — unknown
+keys land in the `sessions.extra` JSONB column — and can be promoted to a real column later.
+
+Verify the analysis layer without a room, a model, or a database:
+`PYTHONPATH=. .venv/Scripts/python.exe` then build a `Transcript` and call
+`progress.metrics.compute_all`. Seed a known history with `python scripts/seed_demo.py`.
+
+### `web/` progress dashboard — `/progress`
+
+Mirrors the same three-layer split: `lib/progress/summary.ts` (SQL) → `lib/progress/analysis.ts`
+(pure functions) → `components/progress/` (rendering). The page and `/api/progress` both call
+`buildSummary`, so they can never disagree about a learner's level.
+
+- **Learner identity is a signed cookie, not an account** (`lib/learner.ts`). The value is
+  `learnerId.HMAC(learnerId, LIVEKIT_API_SECRET)`. The shared passcode still gates the app;
+  this only stops one learner forging another's id to read their history. It is per-browser —
+  phone and laptop are different profiles.
+- **`/api/token` puts the learner id in the participant identity** (`learner_<uuid>`). That is
+  the *only* channel by which the agent learns whose progress it is recording. A visitor with
+  no profile gets the anonymous identity and is simply not tracked.
+- **The per-session CEFR estimate is noisy and is never displayed raw.** `estimateLevel()`
+  weights each session by grader confidence and recency. Showing the raw value would swing a
+  learner A2→B2→B1 on topic alone and destroy trust in the whole dashboard.
+- **Chart colours are in `styles/globals.css` as `--viz-*`, and were validated against the
+  card surface, not the page.** The dark card is `oklch(0.205)` ≈ `#303030`; the standard
+  critical red fails there at 2.75:1, so the dark step is lightened. Status colours always ship
+  with an icon *and* a text label — colour never carries meaning alone.
+- **`connectNulls={false}` in `trend-chart.tsx` is load-bearing.** A gap means "this session
+  was too short to grade", not "zero errors". Bridging it would draw a confident line through
+  the one point where we knew nothing.
 
 ### `plugins/edge_tts.py` — custom TTS adapter
 

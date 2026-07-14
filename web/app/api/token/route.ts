@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { AccessToken, type AccessTokenOptions, type VideoGrant } from 'livekit-server-sdk';
 import { RoomConfiguration } from '@livekit/protocol';
 import { UNLOCK_COOKIE, isUnlocked } from '@/lib/auth';
+import { LEARNER_COOKIE, learnerIdFrom } from '@/lib/learner';
 
 type ConnectionDetails = {
   serverUrl: string;
@@ -46,10 +47,25 @@ export async function POST(req: Request) {
       ? RoomConfiguration.fromJson(body.room_config, { ignoreUnknownFields: true })
       : new RoomConfiguration();
 
-    // Generate participant token
+    // The participant identity is how the agent learns whose progress it is recording. When
+    // a learner is signed in we put their id in it, prefixed; agent/tutor.py::_learner_id_from
+    // reads it back out. A visitor with no profile keeps the template's anonymous identity and
+    // is simply not tracked — the tutor works, nothing is written.
+    //
+    // The id is safe to expose here: it is an opaque uuid, and possessing it grants nothing.
+    // Reading a learner's progress requires the HMAC-signed cookie (lib/learner.ts), which
+    // cannot be produced from the uuid alone.
+    const learnerId = learnerIdFrom(cookieStore.get(LEARNER_COOKIE)?.value);
+
     const participantName = 'user';
-    const participantIdentity = `voice_assistant_user_${Math.floor(Math.random() * 10_000)}`;
-    const roomName = `voice_assistant_room_${Math.floor(Math.random() * 10_000)}`;
+    const participantIdentity = learnerId
+      ? `learner_${learnerId}`
+      : `voice_assistant_user_${crypto.randomUUID()}`;
+
+    // The template used a random integer under 10,000 here, which collides at a rate you can
+    // actually hit — two people practising at once had a ~1-in-10,000 chance of landing in
+    // the *same room* and hearing each other. A uuid removes that.
+    const roomName = `voice_assistant_room_${crypto.randomUUID()}`;
 
     const participantToken = await createParticipantToken(
       { identity: participantIdentity, name: participantName },

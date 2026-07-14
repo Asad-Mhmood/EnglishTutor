@@ -1,0 +1,294 @@
+'use client';
+
+import Link from 'next/link';
+import { TrendChart } from '@/components/progress/trend-chart';
+import { StrengthCard, WeaknessCard } from '@/components/progress/weakness-card';
+import { Button } from '@/components/ui/button';
+import { CEFR_LEVELS, type ProgressSummary } from '@/lib/progress/types';
+
+/**
+ * The dashboard. Rendering only — every number on this page was decided in
+ * lib/progress/analysis.ts, and nothing here computes anything beyond formatting.
+ *
+ * The page answers three questions, in this order, because that is the order a learner
+ * actually asks them:
+ *
+ *   1. Where am I?            → the level band, and the honest confidence in it
+ *   2. What should I fix?     → weak areas, regressions first
+ *   3. Am I getting better?   → the trend charts
+ *
+ * A learner who only reads the first screen still gets the useful part.
+ */
+
+const LEVEL_BLURB: Record<string, string> = {
+  A1: 'Just starting — words and set phrases.',
+  A2: 'Simple sentences on familiar topics.',
+  B1: 'You can hold a conversation and cope when it goes off-script.',
+  B2: 'Fluent and spontaneous; you can argue a point.',
+  C1: 'Precise and flexible, with real subtlety.',
+  C2: 'Effortless and idiomatic.',
+};
+
+function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="bg-card border-border rounded-xl border p-4">
+      <div className="text-muted-foreground text-xs leading-4">{label}</div>
+      <div className="text-card-foreground mt-1.5 text-2xl leading-none font-semibold">{value}</div>
+      {hint && <div className="text-muted-foreground mt-1.5 text-[11px] leading-4">{hint}</div>}
+    </div>
+  );
+}
+
+function LevelCard({ summary }: { summary: ProgressSummary }) {
+  const { level } = summary;
+
+  if (!level.band) {
+    return (
+      <div className="bg-card border-border rounded-xl border p-6">
+        <h2 className="text-card-foreground text-sm font-semibold">Your level</h2>
+        <p className="text-muted-foreground mt-2 text-sm leading-6">
+          Not enough to go on yet. Have a proper conversation with Alex — a few minutes of real
+          talking — and an estimate will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  const percent = Math.round(level.confidence * 100);
+
+  return (
+    <div className="bg-card border-border rounded-xl border p-6">
+      <h2 className="text-card-foreground text-sm font-semibold">Your level</h2>
+
+      <div className="mt-3 flex items-baseline gap-3">
+        <span className="text-card-foreground text-5xl leading-none font-semibold tracking-tight">
+          {level.band}
+        </span>
+        <span className="text-muted-foreground text-sm">{LEVEL_BLURB[level.band]}</span>
+      </div>
+
+      {/* The CEFR scale, with the learner's position marked. A bare "B1" means nothing to
+          someone who has never met the CEFR scale — which is most people. */}
+      <div className="mt-5 flex gap-1" aria-hidden>
+        {CEFR_LEVELS.map((band) => {
+          const reached = level.numeric !== null && CEFR_LEVELS.indexOf(band) + 1 <= level.numeric;
+          return (
+            <div key={band} className="flex-1">
+              <div
+                className="h-1.5 rounded-full"
+                style={{
+                  background: reached ? 'var(--viz-series)' : 'var(--viz-grid)',
+                }}
+              />
+              <div
+                className="mt-1.5 text-center text-[10px] font-medium"
+                style={{
+                  color: band === level.band ? 'var(--viz-series)' : 'var(--viz-axis)',
+                }}
+              >
+                {band}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Confidence is stated, not buried. An estimate from two short sessions is a guess, and
+          saying so is what makes the number worth anything at all. */}
+      <p className="text-muted-foreground mt-4 text-xs leading-5">
+        {level.isProvisional ? (
+          <>
+            <span className="text-card-foreground font-medium">First impression only</span> — based
+            on {level.gradedSessions} graded session
+            {level.gradedSessions === 1 ? '' : 's'}. This will move around until you&apos;ve
+            practised a few more times.
+          </>
+        ) : (
+          <>
+            Based on {level.gradedSessions} graded sessions, weighted towards your recent ones.
+            Confidence: {percent}%.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="mx-auto max-w-md py-24 text-center">
+      <h1 className="text-foreground text-xl font-semibold">No practice yet</h1>
+      <p className="text-muted-foreground mt-3 text-sm leading-6">
+        Have your first conversation with Alex and your progress will show up here — your level, the
+        mistakes worth fixing, and how both change over time.
+      </p>
+      <Button asChild size="lg" className="mt-6 rounded-full">
+        <Link href="/">Start talking</Link>
+      </Button>
+    </div>
+  );
+}
+
+export function Dashboard({ summary }: { summary: ProgressSummary }) {
+  const { totals, trends, strengths, weaknesses, recentCorrections, dataQuality } = summary;
+
+  if (totals.sessions === 0) {
+    return <EmptyState />;
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl px-5 py-10 md:px-8">
+      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+            {summary.learner.displayName}&apos;s progress
+          </h1>
+          {summary.latestSummary && (
+            <p className="text-muted-foreground mt-2 max-w-prose text-sm leading-6">
+              {summary.latestSummary}
+            </p>
+          )}
+        </div>
+        <Button asChild className="rounded-full">
+          <Link href="/">Practise again</Link>
+        </Button>
+      </header>
+
+      <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatTile label="Sessions" value={String(totals.sessions)} />
+        <StatTile
+          label="Practice time"
+          value={`${totals.practiceMinutes} min`}
+          hint={`${totals.wordsSpoken.toLocaleString()} words spoken`}
+        />
+        <StatTile
+          label="Vocabulary"
+          value={totals.vocabularySize.toLocaleString()}
+          hint="distinct words you've used"
+        />
+        <StatTile
+          label="Streak"
+          value={`${totals.currentStreakDays} day${totals.currentStreakDays === 1 ? '' : 's'}`}
+          hint="consecutive days practised"
+        />
+      </section>
+
+      <section className="mb-8">
+        <LevelCard summary={summary} />
+      </section>
+
+      {weaknesses.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-foreground mb-1 text-lg font-semibold">Work on this next</h2>
+          <p className="text-muted-foreground mb-4 text-sm leading-6">
+            Ordered by what matters most. Anything you&apos;d fixed and have started doing again
+            comes first.
+          </p>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {weaknesses.slice(0, 6).map((weakness) => (
+              <WeaknessCard key={`${weakness.category}-${weakness.label}`} weakness={weakness} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {strengths.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-foreground mb-4 text-lg font-semibold">What&apos;s going well</h2>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {strengths.slice(0, 4).map((strength) => (
+              <StrengthCard key={strength.label} strength={strength} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="mb-8">
+        <h2 className="text-foreground mb-1 text-lg font-semibold">Over time</h2>
+        <p className="text-muted-foreground mb-4 text-sm leading-6">
+          Each point is one session. Gaps are sessions too short to score — not zeros.
+        </p>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <TrendChart
+            title="Grammar accuracy"
+            caption="Mistakes per 100 words. Lower is better — and it's per 100 words, so talking more never counts against you."
+            data={trends}
+            dataKey="errorsPer100Words"
+            lowerIsBetter
+            format={(v) => v.toFixed(1)}
+          />
+          <TrendChart
+            title="Vocabulary"
+            caption="Distinct words you've used, adding up across every session."
+            data={trends}
+            dataKey="cumulativeVocabulary"
+            format={(v) => String(Math.round(v))}
+          />
+          <TrendChart
+            title="Sentence complexity"
+            caption="Average words per sentence. Longer isn't automatically better — but a flat line near five means you're not stretching."
+            data={trends}
+            dataKey="meanSentenceLength"
+            format={(v) => v.toFixed(1)}
+          />
+          <TrendChart
+            title="Vocabulary range"
+            caption="Share of your words that go beyond everyday English."
+            data={trends}
+            dataKey="advancedWordRatio"
+            format={(v) => `${Math.round(v * 100)}%`}
+          />
+        </div>
+      </section>
+
+      {recentCorrections.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-foreground mb-4 text-lg font-semibold">Recent corrections</h2>
+          <ul className="divide-border bg-card border-border divide-y rounded-xl border">
+            {recentCorrections.map((correction, index) => (
+              <li key={index} className="p-4">
+                <div className="flex flex-wrap items-baseline gap-2 text-sm">
+                  <span className="text-muted-foreground line-through decoration-1">
+                    {correction.learner_text}
+                  </span>
+                  <span className="text-muted-foreground text-xs">→</span>
+                  <span className="text-card-foreground font-medium">
+                    {correction.corrected_text}
+                  </span>
+                </div>
+                {correction.explanation && (
+                  <p className="text-muted-foreground mt-1.5 text-xs leading-5">
+                    {correction.explanation}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/*
+        The honesty footer. Grammar scoring runs on a speech-to-text transcript, and Whisper
+        both repairs some mistakes and invents others. A learner who sees a correction they
+        know they didn't say deserves to understand why, instead of concluding the tutor is
+        broken — and a learner acting on these numbers deserves to know what they rest on.
+      */}
+      <footer className="text-muted-foreground border-border border-t pt-6 text-xs leading-5">
+        <p className="max-w-prose">
+          <span className="text-foreground font-medium">How this is measured.</span> Alex scores
+          what the speech recogniser heard, so an occasional &ldquo;mistake&rdquo; may be a
+          mis-hearing rather than something you said — if one looks wrong, it probably is. Pace and
+          vocabulary numbers are counted directly from your words and are exact. Pronunciation is{' '}
+          <em>not</em> scored: this measures what you said, not how it sounded.
+        </p>
+        {dataQuality.ungradedSessions > 0 && (
+          <p className="mt-2 max-w-prose">
+            {dataQuality.ungradedSessions} of your {totals.sessions} sessions were too short to
+            score for grammar, so they appear as gaps in the accuracy chart.
+          </p>
+        )}
+      </footer>
+    </div>
+  );
+}

@@ -7,3 +7,9 @@ av>=12.0.0
 tavily-python>=0.5.0  # backs the search_web tool; see tools/search.py
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
+
+# --- progress tracking (progress/) ---
+asyncpg>=0.30.0        # Postgres driver; see repository.py for the statement_cache_size=0 note
+groq>=0.11.0           # end-of-session grading call; separate from the livekit groq plugin
+wordfreq>=3.1.1        # real Zipf word frequencies, so "advanced vocabulary" is a measurement
+                       # against a corpus rather than a word list someone made up

@@ -217,8 +217,13 @@ production, silently as far as your terminal is concerned.
 | Store | Contains | How to write it | Read by |
 |---|---|---|---|
 | `.env` (repo root, gitignored) | everything | edit the file | local `main.py` runs only |
-| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
-| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE` | `vercel env add K production` | the deployed web app |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` | the deployed web app |
+
+The agent and the web app reach the **same Neon database under different names** —
+`PROGRESS_DATABASE_URL` on the agent (the writer) and `DATABASE_URL` on Vercel (the reader,
+and the name the Neon integration provisions automatically). The agent writes progress rows at
+the end of each session; the web app only ever reads them.
 
 Notes learned the hard way:
 
@@ -296,6 +301,15 @@ These are the choices most likely to be "cleaned up" by someone who doesn't know
 | **`pnpm` in `web/`, never `npm`** | npm | The template pins `pnpm-lock.yaml`. npm ignores it and resolves a newer `motion` whose stricter `Easing` type rejects the template's own `ease: 'linear'`. The build then fails on a type error in code you never touched. |
 | **`.gitattributes` forcing LF in `web/`** | leave it | The template's prettier config enforces LF and the build runs prettier. A Windows checkout converts everything to CRLF → hundreds of `Delete ␍` errors. |
 | **Camera + screen share disabled in the UI** | leave the template defaults | Alex is voice-only and has no vision. Those buttons would do nothing, and offering them to a non-technical user is a trap. |
+| **`PROGRESS_DATABASE_URL` optional, every other secret required** | make it required like the rest | A required secret is a crashloop when missing (§5). That is the right trade for `GROQ_API_KEY` — an agent that cannot speak is worthless. It is the wrong trade for the database: it would turn a Neon outage into a tutor that refuses to start, trading a working voice call for a chart nobody can look at during an outage anyway. |
+| **Session grading runs at shutdown, not per turn** | grade each turn as it arrives | Grading is a 70B call. In the middle of a voice conversation the user hears it as Alex going silent. At shutdown nobody is waiting, and the grader gets the *whole* conversation — the only way it can see the same mistake made four times and count it once. |
+| **Deterministic metrics kept separate from LLM grading** | one LLM call produces everything | Arithmetic on a transcript cannot hallucinate; an LLM can. Keeping them apart means a failed or unreachable grader degrades to `NULL` while word count, pace, and complexity still land. A single call would lose the whole session to one bad response. |
+| **Pronunciation is NOT scored** | score it from the STT | Whisper exposes no phonemes and is *explicitly trained to be robust to accents* — the signal pronunciation assessment needs is precisely the one it is designed to discard. A number here would be fabricated, and a learner would act on it. Delivery proxies (pace, hesitation, self-repair) are measured instead and labelled as such. Real phoneme scoring needs Azure Speech Pronunciation Assessment. |
+| **Reading/listening comprehension not tracked** | add the metric | There is no reading or listening *exercise* in the app. There is nothing to comprehend and therefore nothing to measure. The metric would be an invented number attached to an activity that does not exist. |
+| **Errors stored one row each, not as per-session counts** | store a count per category | "You fixed articles last week and they're back this week" is then a *query* rather than a re-analysis. That recurrence signal is the single thing a general chatbot structurally cannot offer, because it remembers nothing between conversations. It is the reason this feature exists. |
+| **CEFR smoothed over sessions before display** | show the latest session's estimate | A single session's estimate genuinely swings A2↔B2 on topic alone — the learner didn't change, the conversation did. A level that lurches after a good chat teaches the learner the dashboard is nonsense. Raw values are stored; smoothing happens on read, so improving the smoothing never needs a backfill. |
+| **Metrics return `None`, never `0.0`, when unmeasurable** | default to zero | Zero plots as a real data point. A learner who said twelve words would show a triumphant dip in the error-rate chart at the exact moment we knew least about them. `NULL` renders as a gap, which is the truth. |
+| **Taxonomy in JSON, not in Python** | keep the dataclasses | The dashboard needs the same labels and advice, and Vercel deploys from `web/` and cannot read files above it. One JSON file plus `scripts/sync_taxonomy.py` beats two hand-maintained lists that drift. |
 
 ---
 
@@ -328,6 +342,18 @@ does not.
 | LiveKit agent | `CA_e4HZqEcBFotF` |
 | Vercel project | `english-tutor` |
 | Agent resources | 2000m CPU / 4 GB, 1 replica |
+| Database | Neon `neon-violet-grass` (Vercel Marketplace), `ep-square-hat-atfqc9xa`, us-east-1 |
+
+### A trap when adding a Vercel integration
+
+`vercel integration add <name>` **overwrites `web/.env.local`** with only that integration's
+variables. Adding Neon wiped `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and
+`APP_PASSCODE` from it, and local dev then dies with `Error: APP_PASSCODE is not set`.
+
+`vercel env pull` does **not** repair it: those four are marked *sensitive* in the Vercel
+project, so the pull writes them back as empty strings. The file looks fixed and is not —
+verify value *lengths*, not key presence. Recover `LIVEKIT_*` from the repo-root `.env` and the
+passcode from the table above. Back the file up before adding another integration.
 
 First connection after an idle period can take a few seconds — worker replicas were observed at 0
 shortly after deploy and 1 while warm, so expect a cold start on the first call of the day.

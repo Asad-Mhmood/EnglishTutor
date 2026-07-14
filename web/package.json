@@ -14,6 +14,7 @@
   "dependencies": {
     "@livekit/components-react": "^2.9.20",
     "@livekit/protocol": "^1.41.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@phosphor-icons/react": "^2.1.8",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -49,6 +50,7 @@
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "recharts": "^3.9.2",
     "shiki": "^3.21.0",
     "sonner": "^2.0.7",
     "streamdown": "^1.6.9",

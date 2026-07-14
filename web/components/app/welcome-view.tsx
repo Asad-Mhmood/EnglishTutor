@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
 function WelcomeImage() {
@@ -32,11 +33,21 @@ export const WelcomeView = ({
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
   const [passcode, setPasscode] = useState('');
+  const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
 
-  // Unlock first, then connect. /api/token refuses to mint a room token without the
-  // httpOnly cookie this sets, so the call cannot start until the passcode is right.
+  // Three steps, in this order, and the order matters:
+  //
+  //   1. /api/unlock  — the passcode gate. Everything else 401s without its cookie.
+  //   2. /api/profile — create or rename the learner, and set the signed learner cookie.
+  //   3. onStartCall  — /api/token reads BOTH cookies and puts the learner's id into the
+  //                     LiveKit participant identity, which is the only way the agent ever
+  //                     learns whose progress it is recording.
+  //
+  // The profile step must complete before the call starts. Starting the call first would mint
+  // a token with no learner id in it, and the whole session would be analysed and then
+  // discarded for want of a row to attach it to.
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isUnlocking) return;
@@ -44,16 +55,30 @@ export const WelcomeView = ({
     setIsUnlocking(true);
     setError(null);
     try {
-      const res = await fetch('/api/unlock', {
+      const unlocked = await fetch('/api/unlock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
+      if (!unlocked.ok) {
+        const body = await unlocked.json().catch(() => null);
         setError(body?.error ?? 'Something went wrong. Try again.');
         return;
       }
+
+      const profile = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: name }),
+      });
+
+      // A profile failure is NOT fatal. If the database is down or unconfigured, the tutor
+      // still works perfectly — the learner just won't get a progress row for this session.
+      // Blocking the call here would take the whole product down to protect a feature.
+      if (!profile.ok) {
+        console.warn('progress tracking unavailable for this session', profile.status);
+      }
+
       onStartCall();
     } catch {
       setError('Could not reach the tutor. Check your connection.');
@@ -79,6 +104,20 @@ export const WelcomeView = ({
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col items-center">
           <input
             type="text"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
+            placeholder="Your name"
+            aria-label="Your name"
+            autoComplete="given-name"
+            maxLength={40}
+            className="border-input bg-background focus:ring-primary w-64 rounded-full border px-5 py-2.5 text-center text-sm focus:ring-2 focus:outline-none"
+          />
+
+          <input
+            type="text"
             value={passcode}
             onChange={(e) => {
               setPasscode(e.target.value);
@@ -88,18 +127,25 @@ export const WelcomeView = ({
             aria-label="Passcode"
             autoComplete="off"
             autoCapitalize="characters"
-            className="border-input bg-background focus:ring-primary w-64 rounded-full border px-5 py-2.5 text-center font-mono text-sm tracking-widest uppercase focus:ring-2 focus:outline-none"
+            className="border-input bg-background focus:ring-primary mt-3 w-64 rounded-full border px-5 py-2.5 text-center font-mono text-sm tracking-widest uppercase focus:ring-2 focus:outline-none"
           />
 
           <Button
             size="lg"
             type="submit"
-            disabled={passcode.trim().length === 0 || isUnlocking}
+            disabled={passcode.trim().length === 0 || name.trim().length === 0 || isUnlocking}
             className="mt-3 w-64 rounded-full font-mono text-xs font-bold tracking-wider uppercase"
           >
             {isUnlocking ? 'Connecting…' : startButtonText}
           </Button>
         </form>
+
+        <p className="text-muted-foreground mt-3 max-w-prose text-xs leading-5">
+          Your name is how Alex keeps track of your progress.{' '}
+          <Link href="/progress" className="underline underline-offset-2">
+            See your progress
+          </Link>
+        </p>
 
         <p
           role="status"

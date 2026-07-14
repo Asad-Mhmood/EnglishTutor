@@ -37,6 +37,31 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* ------------------------------------------------------------------
+   * Progress-dashboard chart tokens.
+   *
+   * Separate from shadcn's --chart-1..5 above, which are an unvalidated
+   * decorative set. Every value here was checked with a CVD/contrast validator
+   * AGAINST THE SURFACE IT ACTUALLY RENDERS ON (the card, not the page) — which
+   * matters: the dark card is oklch(0.205) ≈ #303030, noticeably lighter than a
+   * true black page, and the reference critical red failed there at 2.75:1
+   * while passing on a darker surface. It is lightened below for dark mode.
+   *
+   * Every trend chart is SINGLE-series, so there is no categorical set to cycle
+   * and no adjacent-hue CVD problem to solve — one hue does all of them.
+   *
+   * --viz-warning is deliberately below 3:1 on the light surface. That is the
+   * documented behaviour of the status palette, and the required mitigation is
+   * that a status colour NEVER carries meaning alone: every use pairs it with an
+   * icon and a text label. See weakness-card.tsx.
+   * ------------------------------------------------------------------ */
+  --viz-series: #2a78d6;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #898781;
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-critical: #d03b3b;
 }
 
 .dark {
@@ -71,6 +96,16 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.439 0 0);
+
+  /* Dark steps chosen for the dark CARD surface (#303030), not auto-flipped.
+   * --viz-critical is lightened from #d03b3b (2.75:1 there — effectively invisible)
+   * to #e05c5c (passes 3:1, and still clears CVD separation from the others). */
+  --viz-series: #3987e5;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #898781;
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-critical: #e05c5c;
 }
 
 @theme inline {

@@ -2,7 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- `README.md` — the deployment runbook. **Read its Deployment section before deploying anything.**
+- `DEPLOY.md` — the step-by-step deploy runbook. **Read it before deploying anything.**
+- `README.md` — what the system is, how to run it locally, and the project layout.
 - `ARCHITECTURE.md` — system diagram, request lifecycle, secret-store layout, and the decision log
   (why the non-obvious choices were made, and what not to "clean up").
 

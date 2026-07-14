@@ -214,6 +214,11 @@ sync script. If they drift, the dashboard falls back to showing raw category key
 
 # Deployment
 
+> **Just want the commands?** → **[`DEPLOY.md`](DEPLOY.md)** is the step-by-step runbook:
+> copy-pasteable commands, what to verify after each one, and the traps that have already bitten.
+>
+> This section is the *understanding* behind it — read it once, then work from `DEPLOY.md`.
+
 Read this section fully before deploying anything. The system has **three deploy targets and four
 secret stores**, none of which are synced, and the most common failures here are silent.
 

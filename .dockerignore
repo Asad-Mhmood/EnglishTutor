@@ -1,5 +1,6 @@
 .venv/
 .git/
+web/
 .gitignore
 __pycache__/
 **/__pycache__/

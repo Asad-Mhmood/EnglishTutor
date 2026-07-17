@@ -118,7 +118,7 @@ export function TrajectoryReport({ parameters }: { parameters: ParameterSummary[
         <Card className="p-6">
           <p className="text-muted-foreground text-sm leading-6">
             This view groups your history into runs of five sessions and compares them — it needs
-            more than five sessions before there are two groups to compare. Keep practising and it
+            more than five sessions before there are two groups to compare. Keep practicing and it
             will fill in by itself.
           </p>
         </Card>

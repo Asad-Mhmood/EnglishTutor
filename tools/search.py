@@ -17,7 +17,7 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 # Tavily's own deadline. Past this the caller is left listening to filler speech,
-# which gets awkward; better to fail and let Alex say so.
+# which gets awkward; better to fail and let Ahmad say so.
 _SEARCH_TIMEOUT = 15.0
 
 # Three hits is plenty of context for a two-sentence spoken answer.

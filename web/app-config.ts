@@ -34,13 +34,13 @@ export interface AppConfig {
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
   companyName: 'English Tutor',
-  pageTitle: 'Practice English with Alex',
+  pageTitle: 'Practice English with Ahmad',
   pageDescription:
-    'Talk to Alex, a friendly AI English tutor. Just speak naturally — Alex listens, replies, ' +
+    'Talk to Ahmad, a friendly AI English tutor. Just speak naturally — Ahmad listens, replies, ' +
     'and corrects your mistakes as you go.',
 
   supportsChatInput: true,
-  // Alex is voice-only and has no eyes: camera and screen share would give the user
+  // Ahmad is voice-only and has no eyes: camera and screen share would give the user
   // controls that do nothing. Chat input stays as a fallback if a mic won't work.
   supportsVideoInput: false,
   supportsScreenShare: false,

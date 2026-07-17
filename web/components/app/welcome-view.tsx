@@ -41,7 +41,7 @@ export const WelcomeView = ({
         </h1>
 
         <p className="text-muted-foreground mt-3 text-sm leading-6 text-pretty">
-          Speak naturally about anything at all. Alex will chat back, gently correct your mistakes,
+          Speak naturally about anything at all. Ahmad will chat back, gently correct your mistakes,
           and look things up on the web if you ask.
         </p>
 
@@ -55,7 +55,7 @@ export const WelcomeView = ({
         </Button>
 
         <p className="text-muted-foreground mt-4 text-xs leading-5">
-          Your browser will ask to use your microphone. Choose &ldquo;Allow&rdquo; so Alex can hear
+          Your browser will ask to use your microphone. Choose &ldquo;Allow&rdquo; so Ahmad can hear
           you.
         </p>
 

@@ -29,7 +29,7 @@ class TranscriptCollector:
     """
     Accumulates the learner's final transcriptions over one session.
 
-    Only the learner's speech is kept. Alex's turns are not recorded: nothing downstream
+    Only the learner's speech is kept. Ahmad's turns are not recorded: nothing downstream
     grades the tutor, and leaving them out means the database holds only what the human said.
     """
 

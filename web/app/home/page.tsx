@@ -11,11 +11,11 @@ import { buildSummary } from '@/lib/progress/summary';
 import type { ProgressSummary } from '@/lib/progress/types';
 
 /**
- * /home — the hub. Two doors: talk to Alex, or look at your progress.
+ * /home — the hub. Two doors: talk to Ahmad, or look at your progress.
  *
  * The summary strip above them is deliberately thin. This page's job is to get a learner into
  * a conversation in one tap; anything that invites them to stand here reading numbers instead
- * is working against it. The numbers that *do* appear are the ones that pull towards practising
+ * is working against it. The numbers that *do* appear are the ones that pull towards practicing
  * — a streak you don't want to break, a level you want to move.
  */
 
@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
 /** The one line under the greeting. It changes with how much we actually know about them. */
 function statusLine(summary: ProgressSummary | null): string {
   if (!summary || summary.totals.sessions === 0) {
-    return 'Have your first conversation with Alex and your progress starts building from there.';
+    return 'Have your first conversation with Ahmad and your progress starts building from there.';
   }
   if (summary.latestSummary) {
     return summary.latestSummary;
@@ -56,7 +56,7 @@ function SummaryStrip({ summary }: { summary: ProgressSummary }) {
       <StatTile
         label="Streak"
         value={`${totals.currentStreakDays} day${totals.currentStreakDays === 1 ? '' : 's'}`}
-        hint="consecutive days practised"
+        hint="consecutive days practiced"
       />
       <StatTile
         label="Practice time"
@@ -85,7 +85,7 @@ function NoDatabase() {
         href="/call"
         className="bg-primary text-primary-foreground mx-auto mt-6 rounded-full px-6 py-2.5 text-sm font-medium"
       >
-        Talk to Alex anyway
+        Talk to Ahmad anyway
       </Link>
     </main>
   );
@@ -127,8 +127,8 @@ export default async function HomePage() {
           href="/call"
           icon={MicrophoneIcon}
           emphasis="primary"
-          title="Talk to Alex"
-          description="Speak naturally about anything. Alex listens, replies, corrects you gently, and can look things up on the web."
+          title="Talk to Ahmad"
+          description="Speak naturally about anything. Ahmad listens, replies, corrects you gently, and can look things up on the web."
           cta="Start a call"
         />
         <ActionCard
@@ -138,7 +138,7 @@ export default async function HomePage() {
           description={
             hasHistory
               ? 'Your level, the mistakes worth fixing next, and how both have changed over time.'
-              : 'Your level, weak areas and trends will appear here once you have practised.'
+              : 'Your level, weak areas and trends will appear here once you have practiced.'
           }
           cta={hasHistory ? 'See your progress' : 'Take a look'}
         />

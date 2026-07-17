@@ -54,7 +54,7 @@ export function TrendChart({
       >
         {parameter.knownCount === 0
           ? 'Nothing to show yet.'
-          : 'One session so far — practise again to see a trend.'}
+          : 'One session so far — practice again to see a trend.'}
       </div>
     );
   }

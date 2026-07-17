@@ -25,7 +25,7 @@
       "key": "subject_verb_agreement",
       "label": "Subject–verb agreement",
       "hint": "subject and verb do not agree in number: 'she go', 'they was', 'he don't'",
-      "advice": "Practise describing what other people do — 'he works', 'she takes', 'they run'. Third-person singular is where the -s goes missing most."
+      "advice": "Practice describing what other people do — 'he works', 'she takes', 'they run'. Third-person singular is where the -s goes missing most."
     },
     {
       "key": "articles",
@@ -43,19 +43,19 @@
       "key": "plurals_countability",
       "label": "Plurals and countability",
       "hint": "plural/singular or countability error: 'many informations', 'two childs'",
-      "advice": "Practise with the awkward uncountables — advice, information, furniture, news, research. Say 'a piece of advice' until 'an advice' starts to sound wrong."
+      "advice": "Practice with the awkward uncountables — advice, information, furniture, news, research. Say 'a piece of advice' until 'an advice' starts to sound wrong."
     },
     {
       "key": "word_order",
       "label": "Word order",
       "hint": "words in the wrong order: 'I know not', 'always he is late'",
-      "advice": "English holds subject-verb-object hard. Practise placing adverbs — 'he is always late', not 'always he is late' — since that's where word order usually slips."
+      "advice": "English holds subject-verb-object hard. Practice placing adverbs — 'he is always late', not 'always he is late' — since that's where word order usually slips."
     },
     {
       "key": "question_formation",
       "label": "Forming questions",
       "hint": "malformed question: 'What you are doing?', 'Do you went?'",
-      "advice": "Ask Alex five questions in a row on purpose. Questions invert the subject and auxiliary, and that inversion is easy to skip when you're speaking fast."
+      "advice": "Ask Ahmad five questions in a row on purpose. Questions invert the subject and auxiliary, and that inversion is easy to skip when you're speaking fast."
     },
     {
       "key": "pronouns",
@@ -67,7 +67,7 @@
       "key": "modals",
       "label": "Modal verbs",
       "hint": "misused modal: 'I must to go', 'I can to swim', 'you should going'",
-      "advice": "A modal is always followed by a bare verb: 'must go', never 'must to go'. Practise talking about obligations and possibilities in your own life."
+      "advice": "A modal is always followed by a bare verb: 'must go', never 'must to go'. Practice talking about obligations and possibilities in your own life."
     },
     {
       "key": "conditionals",

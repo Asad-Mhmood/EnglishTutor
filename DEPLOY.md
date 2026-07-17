@@ -169,7 +169,7 @@ raises a pydantic validation error **before any agent code runs**. On a deployed
 **crashloop**, not a degraded agent. `Status: Running` can be shown while the container is dying on
 boot over and over. `registered worker` cannot.
 
-Finally, the end-to-end test: open the site, sign in, start a call. **If you hear Alex's greeting,
+Finally, the end-to-end test: open the site, sign in, start a call. **If you hear Ahmad's greeting,
 every layer below it is working** — token, dispatch, VAD, STT, LLM and TTS all had to succeed to
 produce that one sentence.
 
@@ -267,7 +267,7 @@ blindly retry.
 a value no worker is registered under, the page loads, sign-in works, the token issues, the room
 connects — and **no agent ever joins and nothing errors anywhere**. The user just sits in silence.
 This is the single most confusing failure this system can produce, and the first thing to suspect
-when the page works but Alex never speaks.
+when the page works but Ahmad never speaks.
 
 **Use `pnpm` in `web/`, never `npm`.** The template pins `pnpm-lock.yaml`. npm ignores it and resolves
 a newer `motion` whose stricter types reject the template's own code, and `pnpm build` then fails on

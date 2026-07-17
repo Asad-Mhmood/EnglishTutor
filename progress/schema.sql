@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS learners (
 ALTER TABLE learners ADD COLUMN IF NOT EXISTS username text;
 
 -- Backfill: give each pre-username learner the username their display name implies, so that
--- someone who practised as "Asad" before the login screen existed gets their old history back
+-- someone who practiced as "Asad" before the login screen existed gets their old history back
 -- by logging in as "asad" rather than silently starting from zero.
 --
 -- Only the OLDEST claimant of each candidate name is backfilled (rn = 1). If two people both
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   self_correction_rate real,  -- mid-sentence restarts per 100 words
   stt_confidence       real,  -- mean ASR confidence, when the STT reports it
 
-  -- Engagement. A learner who only ever answers is not practising conversation.
+  -- Engagement. A learner who only ever answers is not practicing conversation.
   question_ratio real,
 
   -- LLM-graded (progress/grading.py). NULL when the session was too short to grade.

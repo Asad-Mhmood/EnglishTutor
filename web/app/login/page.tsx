@@ -27,7 +27,7 @@ export default async function LoginPage() {
             Welcome back
           </h1>
           <p className="text-muted-foreground mt-2 text-sm leading-6 text-balance">
-            Sign in to talk with Alex and pick up your progress where you left it.
+            Sign in to talk with Ahmad and pick up your progress where you left it.
           </p>
         </div>
 

@@ -39,7 +39,7 @@ class Category:
     """How the grader should recognise it. Goes into the grading prompt."""
 
     advice: str
-    """What to practise. Shown in 'work on this next'. Written in the second person."""
+    """What to practice. Shown in 'work on this next'. Written in the second person."""
 
 
 def _load() -> tuple[Category, ...]:

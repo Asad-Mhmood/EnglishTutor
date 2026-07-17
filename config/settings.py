@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Greeting spoken when a user joins the room
     AGENT_GREETING: str = (
-        "Hi there! I'm Alex, your English tutor. "
+        "Hi there! I'm Ahmad, your English tutor. "
         "Feel free to talk to me about anything — I'm here to help you practice. "
         "So, what's on your mind today?"
     )

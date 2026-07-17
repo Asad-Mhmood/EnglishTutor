@@ -48,7 +48,7 @@ function labelFor(key: string): string {
 }
 
 function adviceFor(key: string): string {
-  return CATEGORIES.get(key)?.advice ?? 'Keep practising this in conversation.';
+  return CATEGORIES.get(key)?.advice ?? 'Keep practicing this in conversation.';
 }
 
 // ---------------------------------------------------------------------------
@@ -722,7 +722,7 @@ export function buildTrend(sessions: SessionRow[]): TrendPoint[] {
  * Consecutive days, counting back from the learner's most recent session.
  *
  * Anchored to their last session rather than to today, so opening the dashboard after a
- * two-day break shows "3 day streak (last practised Tuesday)" rather than silently resetting
+ * two-day break shows "3 day streak (last practiced Tuesday)" rather than silently resetting
  * to zero. The UI is responsible for saying when the streak was last extended — a streak
  * count that quietly means something different depending on the day you look at it is worse
  * than no streak at all.

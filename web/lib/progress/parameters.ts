@@ -265,7 +265,7 @@ export const PARAMETERS: ParameterSpec[] = [
     group: 'engagement',
     label: 'Questions you ask',
     caption:
-      'Share of your turns that ask something. Alex ends every turn with a question, so you can hold a long conversation without ever forming one yourself — and forming questions is its own skill.',
+      'Share of your turns that ask something. Ahmad ends every turn with a question, so you can hold a long conversation without ever forming one yourself — and forming questions is its own skill.',
     goodDirection: 'higher',
     format: percent,
     describe: (value) => `${Math.round(value * 100)}% of your turns ask a question`,

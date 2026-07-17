@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     const participantIdentity = `learner_${learnerId}`;
 
     // The template used a random integer under 10,000 here, which collides at a rate you can
-    // actually hit — two people practising at once had a ~1-in-10,000 chance of landing in
+    // actually hit — two people practicing at once had a ~1-in-10,000 chance of landing in
     // the *same room* and hearing each other. A uuid removes that.
     const roomName = `voice_assistant_room_${crypto.randomUUID()}`;
 

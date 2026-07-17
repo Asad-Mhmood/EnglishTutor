@@ -46,7 +46,7 @@ class Transcript:
     """
     Everything the learner said in one session, plus the wall-clock span it happened in.
 
-    The agent's own turns are deliberately not kept: nothing downstream grades Alex, and
+    The agent's own turns are deliberately not kept: nothing downstream grades Ahmad, and
     not storing them keeps the learner's speech the only thing in the database.
     """
 
@@ -74,7 +74,7 @@ class Transcript:
         Words-per-minute must not be computed against session duration: a learner who talks
         for thirty seconds and then thinks for two minutes would score a third of their real
         speaking rate, and the chart would reward rushing. This is still an approximation —
-        it counts Alex's replies and the learner's pauses as speaking time — so treat WPM as
+        it counts Ahmad's replies and the learner's pauses as speaking time — so treat WPM as
         a coarse trend, not a measurement. Getting this properly right needs per-utterance
         audio durations, which the STT does not currently hand us.
         """

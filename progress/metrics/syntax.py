@@ -60,7 +60,7 @@ def conversational_initiative(transcript: Transcript) -> dict[str, float | int |
     How often the learner asks something rather than only answering.
 
     Not on the original list of parameters, and arguably the most diagnostic thing here.
-    Alex's prompt ends every single turn with a question (see prompts/tutor.py), so a passive
+    Ahmad's prompt ends every single turn with a question (see prompts/tutor.py), so a passive
     learner can hold a forty-turn conversation while producing nothing but answers. That looks
     like fluent practice and isn't: they never once had to *form* a question, which is a
     distinct skill with its own grammar and the one most likely to collapse under pressure in

@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A LiveKit voice agent that acts as a conversational English tutor ("Alex"). A user joins a LiveKit
+A LiveKit voice agent that acts as a conversational English tutor ("Ahmad"). A user joins a LiveKit
 room and speaks; the agent transcribes, generates a reply, and speaks back. After the call ends, the
 session is analysed and stored, and the learner can see their progress over time at `/progress`.
 
@@ -177,7 +177,7 @@ server-side token minter. That is `app/api/token/route.ts`.
   *automatic dispatch* — it joins any room created on the project. If `AGENT_NAME` is set in `web/`
   and does not match a worker registered under that exact name, the frontend connects to a room, the
   agent never joins, and **nothing errors**. The user just sits in silence. This is the failure mode
-  to suspect first when the page works but Alex never speaks.
+  to suspect first when the page works but Ahmad never speaks.
 
 - **Install with `pnpm`, not `npm`.** The template ships `pnpm-lock.yaml`. npm ignores it and resolves
   a newer `motion`, whose stricter `Easing` type rejects the template's own `ease: 'linear'` in
@@ -193,7 +193,7 @@ server-side token minter. That is `app/api/token/route.ts`.
 |---|---|
 | `/` | a signpost — redirects to `/home` or `/login`. Renders nothing. |
 | `/login` | username + shared passcode. The only door in. |
-| `/home` | the hub: two cards, **Talk to Alex** and **Dashboard**, over a thin stat strip. |
+| `/home` | the hub: two cards, **Talk to Ahmad** and **Dashboard**, over a thin stat strip. |
 | `/call` | the voice session (the old `/`). |
 | `/progress` | the dashboard. |
 

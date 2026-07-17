@@ -40,7 +40,7 @@ export default async function ProgressPage() {
             tutor itself works fine.
           </p>
           <Button asChild className="mt-6 rounded-full">
-            <Link href="/call">Talk to Alex</Link>
+            <Link href="/call">Talk to Ahmad</Link>
           </Button>
         </div>
       </main>

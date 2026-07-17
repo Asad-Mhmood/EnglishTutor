@@ -45,7 +45,7 @@ function LevelCard({ summary }: { summary: ProgressSummary }) {
       <Card className="p-6">
         <h2 className="text-card-foreground text-sm font-semibold">Your level</h2>
         <p className="text-muted-foreground mt-2 text-sm leading-6">
-          Not enough to go on yet. Have a proper conversation with Alex — a few minutes of real
+          Not enough to go on yet. Have a proper conversation with Ahmad — a few minutes of real
           talking — and an estimate will appear here.
         </p>
       </Card>
@@ -99,7 +99,7 @@ function LevelCard({ summary }: { summary: ProgressSummary }) {
             <span className="text-card-foreground font-medium">First impression only</span> — based
             on {level.gradedSessions} graded session
             {level.gradedSessions === 1 ? '' : 's'}. This will move around until you&apos;ve
-            practised a few more times.
+            practiced a few more times.
           </>
         ) : (
           <>
@@ -117,8 +117,8 @@ function EmptyState() {
     <div className="mx-auto max-w-md py-20 text-center">
       <h1 className="text-foreground text-xl font-semibold">No practice yet</h1>
       <p className="text-muted-foreground mt-3 text-sm leading-6">
-        Have your first conversation with Alex and your progress will show up here — your level, the
-        mistakes worth fixing, and how both change over time.
+        Have your first conversation with Ahmad and your progress will show up here — your level,
+        the mistakes worth fixing, and how both change over time.
       </p>
       <Button asChild size="lg" className="mt-6 rounded-full">
         <Link href="/call">Start talking</Link>
@@ -181,7 +181,7 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
           )}
         </div>
         <Button asChild className="rounded-full">
-          <Link href="/call">Practise again</Link>
+          <Link href="/call">Practice again</Link>
         </Button>
       </header>
 
@@ -200,7 +200,7 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
         <StatTile
           label="Streak"
           value={`${totals.currentStreakDays} day${totals.currentStreakDays === 1 ? '' : 's'}`}
-          hint="consecutive days practised"
+          hint="consecutive days practiced"
         />
       </section>
 
@@ -293,7 +293,7 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
       */}
       <footer className="text-muted-foreground border-border border-t pt-6 text-xs leading-5">
         <p className="max-w-prose">
-          <span className="text-foreground font-medium">How this is measured.</span> Alex scores
+          <span className="text-foreground font-medium">How this is measured.</span> Ahmad scores
           what the speech recogniser heard, so an occasional &ldquo;mistake&rdquo; may be a
           mis-hearing rather than something you said — if one looks wrong, it probably is. Pace and
           vocabulary numbers are counted directly from your words and are exact. Pronunciation is{' '}

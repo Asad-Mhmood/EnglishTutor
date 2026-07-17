@@ -4,7 +4,7 @@ A real-time voice agent that acts as a conversational English tutor. You talk, i
 talks back — correcting mistakes naturally in the flow of conversation rather than stopping to
 lecture. It then remembers what you got wrong, and tells you when a mistake you had fixed comes back.
 
-The tutor persona is "Alex": patient, encouraging, and calibrated to your proficiency level. It
+The tutor persona is "Ahmad": patient, encouraging, and calibrated to your proficiency level. It
 embeds corrections into its replies (you say *"I goed to the store"*, it answers *"Oh, you went to
 the store! What did you get?"*) and always ends with a follow-up question to keep you talking.
 
@@ -13,8 +13,8 @@ the store! What did you get?"*) and always ends with a follow-up question to kee
 **<https://english-tutor-nine-green.vercel.app>** — passcode `ALEX2026`
 
 Sign in with **any username** you like plus the passcode. There is no registration step — the first
-time a username is used, it becomes yours. Then pick **Talk to Alex** and allow the microphone.
-Nothing to install; it works on a phone. Alex greets you first, so if you hear the greeting,
+time a username is used, it becomes yours. Then pick **Talk to Ahmad** and allow the microphone.
+Nothing to install; it works on a phone. Ahmad greets you first, so if you hear the greeting,
 everything downstream is working.
 
 Use the **same username on every device** and your progress follows you: phone and laptop are one
@@ -28,7 +28,7 @@ idle and has to wake up.
 **Voice conversation.** A full speech pipeline: voice activity detection, speech-to-text, an LLM, and
 text-to-speech, all on free tiers.
 
-**Web search.** Ask about the news, the weather, a price, last night's score, and Alex looks it up
+**Web search.** Ask about the news, the weather, a price, last night's score, and Ahmad looks it up
 via [Tavily](https://tavily.com). It announces the search out loud first, because dead air on a voice
 call is unnerving. Tell it not to search and it won't.
 
@@ -199,7 +199,7 @@ AGENT_NAME=              # must stay EMPTY — see below
 
 **Leave `AGENT_NAME` blank.** The worker registers with no agent name, which means it auto-joins any
 room the frontend creates. If you set a name here that doesn't match a worker registered under that
-exact name, the page will load, the call will "connect", and Alex will simply never speak — with no
+exact name, the page will load, the call will "connect", and Ahmad will simply never speak — with no
 error anywhere. That is the first thing to check if the app goes silent.
 
 ### Helper scripts
@@ -333,7 +333,7 @@ lk agent status     # want: Status = Running
 lk agent logs       # want: "registered worker", no traceback
 ```
 
-Then open the site, sign in with a username and the passcode, talk to Alex for a minute or two, hang
+Then open the site, sign in with a username and the passcode, talk to Ahmad for a minute or two, hang
 up, and open the **Dashboard**.
 
 ## Deploying a change
@@ -471,7 +471,7 @@ web/                        the website (Next.js)
 
   app/page.tsx              signpost — redirects to /home or /login
   app/login/page.tsx        username + passcode; the only door in
-  app/home/page.tsx         the hub — Talk to Alex, or Dashboard
+  app/home/page.tsx         the hub — Talk to Ahmad, or Dashboard
   app/call/page.tsx         the voice session
   app/progress/page.tsx     the dashboard
 
@@ -508,7 +508,7 @@ late imports.
 
 **The tutor's behavior** lives entirely in `prompts/tutor.py`. It's written for speech, so it forbids
 markdown, bullet points, and headers — anything the LLM emits goes straight to text-to-speech and
-would be read aloud verbatim. Keep that constraint. Whether Alex searches the web is also decided
+would be read aloud verbatim. Keep that constraint. Whether Ahmad searches the web is also decided
 there, not in code.
 
 **Adding a tracked metric** is one function. Write it in `progress/metrics/`, decorate it with
@@ -539,7 +539,7 @@ The common thread: **this system fails quietly.** VAD failure, TTS failure, and 
 produce *silence* rather than an exception. When something is wrong, assume the logs know and the UI
 does not.
 
-**The page connects, the call "starts", but Alex never speaks.** `AGENT_NAME` is set to something no
+**The page connects, the call "starts", but Ahmad never speaks.** `AGENT_NAME` is set to something no
 worker is registered under. It must be empty, in both `web/.env.local` and Vercel. The room is
 created, no worker is dispatched, and nothing reports an error anywhere.
 

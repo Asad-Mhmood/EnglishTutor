@@ -9,7 +9,7 @@ useful data point. A crash that drops the whole session is not.
 WHEN THIS RUNS, AND WHY IT MATTERS
 
 Once, at the end of the session — not per turn. Grading per turn would put a 70B model call
-in the middle of a live voice conversation, and the user would hear the latency as Alex going
+in the middle of a live voice conversation, and the user would hear the latency as Ahmad going
 quiet. The voice pipeline is the product; the tracker is not allowed to slow it down. Running
 at shutdown also gives the grader the whole conversation, which is the only way it can see a
 learner make the same mistake four times and count it once.

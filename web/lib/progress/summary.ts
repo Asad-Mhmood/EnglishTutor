@@ -147,6 +147,12 @@ export async function buildSummary(sql: Sql, learnerId: string): Promise<Progres
     parameters,
     recentCorrections: errors.slice(-MAX_RECENT_CORRECTIONS).reverse(),
 
+    // The rows themselves, for the session explorer. Already fetched for the analysis above —
+    // shipping them costs no extra query, and letting the client re-run the pure analysis over
+    // a filtered window is what keeps the windowed cards incapable of disagreeing with these.
+    sessions,
+    errors,
+
     dataQuality: {
       gradedSessions,
       ungradedSessions: sessions.length - gradedSessions,

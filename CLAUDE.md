@@ -313,6 +313,24 @@ Mirrors the same three-layer split: `lib/progress/summary.ts` (SQL) → `lib/pro
 - **`connectNulls={false}` in `trend-chart.tsx` is load-bearing.** A gap means "this session
   was too short to grade", not "zero errors". Bridging it would draw a confident line through
   the one point where we knew nothing.
+- **`ProgressSummary` ships the raw rows** (`sessions`, `errors`) alongside the aggregates —
+  they were already fetched, so it costs no extra query. The session explorer
+  (`components/progress/session-explorer.tsx`) filters them to a window
+  (`lib/progress/filters.ts`) and re-runs the *same* pure `buildParameters` over the subset,
+  which is what makes a filtered view incapable of disagreeing with the full-history cards.
+  Filtering scopes only that section; the aggregates above it never change with the filter,
+  so "your level" always means the same thing. Cumulative parameters are excluded from
+  windowed views — a running total restarted from zero inside a window reads as a collapse.
+- **The trajectory report** (`components/progress/trajectory-report.tsx`, `buildGroupReport`
+  in `analysis.ts`) chunks the history into sequential groups — five sessions each, widening
+  automatically so the table never exceeds eight columns — and compares group means. It is
+  derived from the already-built parameter series, not recomputed from rows, so it cannot
+  drift from the cards. Same honesty rules everywhere: an unmeasured group is "—" (a gap,
+  never a zero), and cumulative parameters get no verdict.
+- **Dashboard dates go through `lib/progress/dates.ts`, never `toLocaleDateString`.** The page
+  is server-rendered then hydrated, and a locale- or timezone-dependent formatter can emit
+  different text on the server than in the browser — a hydration mismatch in code you never
+  touched. Fixed month names and UTC fields are the same string everywhere.
 
 ### `plugins/edge_tts.py` — custom TTS adapter
 

@@ -4,10 +4,13 @@ import taxonomy from './taxonomy.json';
 import {
   type CefrLevel,
   type ErrorRow,
+  type GroupReport,
+  type GroupedParameter,
   type LevelEstimate,
   type ParameterDelta,
   type ParameterPoint,
   type ParameterSummary,
+  type SessionGroup,
   type SessionRow,
   type Strength,
   type TrendPoint,
@@ -569,6 +572,120 @@ export function analyseMetricTrends(parameters: ParameterSummary[]): {
   }
 
   return { strengths, slipping };
+}
+
+// ---------------------------------------------------------------------------
+// The trajectory report: the history in sequential groups
+// ---------------------------------------------------------------------------
+
+/** Sessions per group. Five is enough to average out topic noise without hiding a real change. */
+const GROUP_SIZE = 5;
+
+/** More columns than this stops being scannable, so long histories widen the groups instead. */
+const MAX_GROUPS = 8;
+
+/**
+ * Groups of five until five-session groups would overflow the report, then ten, and so on.
+ * A learner with 200 sessions gets eight columns of twenty-five, not forty columns of five.
+ */
+export function pickGroupSize(sessionCount: number): number {
+  let size = GROUP_SIZE;
+  while (Math.ceil(sessionCount / size) > MAX_GROUPS) {
+    size += GROUP_SIZE;
+  }
+  return size;
+}
+
+/**
+ * Chunk the history into sequential groups and give every parameter a mean per group, plus a
+ * first-group-versus-last-group verdict.
+ *
+ * WHY GROUPS AND NOT THE EXISTING TREND LINE. The smoothed line answers "which way am I
+ * heading right now"; it cannot answer "was my second month better than my first", because a
+ * three-session rolling window has forgotten the first month entirely. Averaging five sessions
+ * against five sessions is the comparison a learner actually means by "am I improving over
+ * time" — and it is the same windows-of-means logic makeDelta already applies, just with wider
+ * windows.
+ *
+ * Derived from the already-built ParameterSummary series rather than re-reading sessions, so
+ * the report and the cards are computed from literally the same numbers and cannot drift.
+ *
+ * Returns null below two groups: one group is a baseline, not a trajectory, and the UI says
+ * so in words rather than rendering a one-column table.
+ */
+export function buildGroupReport(
+  parameters: ParameterSummary[],
+  groupSize?: number
+): GroupReport | null {
+  const points = parameters[0]?.points ?? [];
+  const sessionCount = points.length;
+  const size = groupSize ?? pickGroupSize(sessionCount);
+
+  if (sessionCount <= size) {
+    return null;
+  }
+
+  const groups: SessionGroup[] = [];
+  for (let start = 0; start < sessionCount; start += size) {
+    const end = Math.min(start + size, sessionCount);
+    groups.push({
+      label: end - start === 1 ? `${start + 1}` : `${start + 1}–${end}`,
+      startIndex: start + 1,
+      endIndex: end,
+      sessionCount: end - start,
+      startDate: points[start].date,
+      endDate: points[end - 1].date,
+    });
+  }
+
+  const grouped: GroupedParameter[] = parameters.map((parameter) => {
+    // The known values per group. Kept as arrays because makeDelta wants both ends raw — it
+    // computes the means itself and reports how many sessions went into each.
+    const knownPerGroup = groups.map((group) =>
+      parameter.points
+        .slice(group.startIndex - 1, group.endIndex)
+        .map((point) => point.value)
+        .filter((value): value is number => value !== null)
+    );
+
+    const values = knownPerGroup.map((known) => {
+      if (known.length === 0) {
+        // Nothing in the group was measured — an unknown, never a zero. Same rule as the charts.
+        return null;
+      }
+      if (parameter.cumulative) {
+        // A running total: the value at the end of the group, not a mean of the climb.
+        return known[known.length - 1];
+      }
+      const groupMean = mean(known);
+      return groupMean === null ? null : Number(groupMean.toFixed(4));
+    });
+
+    // First group with data versus last group with data. Usually groups 1 and N; a learner
+    // whose latest sessions were all too short to grade still gets a verdict from the last
+    // group that carried evidence, rather than a blank.
+    const measured = knownPerGroup
+      .map((known, index) => ({ known, index }))
+      .filter(({ known }) => known.length > 0);
+
+    const delta =
+      parameter.cumulative || measured.length < 2
+        ? null
+        : makeDelta(parameter, measured[0].known, measured[measured.length - 1].known);
+
+    return {
+      key: parameter.key,
+      group: parameter.group,
+      label: parameter.label,
+      goodDirection: parameter.goodDirection,
+      ordinal: parameter.ordinal,
+      cumulative: parameter.cumulative,
+      values,
+      delta,
+    };
+  });
+
+  return { groupSize: size, groups, parameters: grouped };
 }
 
 // ---------------------------------------------------------------------------

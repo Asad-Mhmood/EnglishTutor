@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { ParameterCard } from '@/components/progress/parameter-card';
+import { SessionExplorer } from '@/components/progress/session-explorer';
 import { StatTile } from '@/components/progress/stat-tile';
+import { TrajectoryReport } from '@/components/progress/trajectory-report';
 import { StrengthCard, WeaknessCard } from '@/components/progress/weakness-card';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -252,6 +254,10 @@ export function Dashboard({ summary }: { summary: ProgressSummary }) {
           />
         ))}
       </section>
+
+      <TrajectoryReport parameters={parameters} />
+
+      <SessionExplorer summary={summary} />
 
       {recentCorrections.length > 0 && (
         <section className="mb-8">

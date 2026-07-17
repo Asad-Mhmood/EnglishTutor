@@ -37,7 +37,7 @@ const VERDICT: Record<
   moved: { word: 'Changed', color: 'var(--viz-axis)', Icon: ArrowsHorizontalIcon },
 };
 
-function DeltaChip({
+export function DeltaChip({
   delta,
   parameterKey,
   suffix,
@@ -96,7 +96,18 @@ function Sparkline({ parameter }: { parameter: ParameterSummary }) {
   );
 }
 
-export function ParameterCard({ parameter }: { parameter: ParameterSummary }) {
+export function ParameterCard({
+  parameter,
+  // Overridable because the session explorer renders these same cards over a *filtered window*,
+  // where "since you started" would silently mean "since the start of the window" — true, but
+  // not what the words say. The defaults keep the full-history dashboard byte-identical.
+  sinceSuffix = 'since you started',
+  recentSuffix = 'in your recent sessions',
+}: {
+  parameter: ParameterSummary;
+  sinceSuffix?: string;
+  recentSuffix?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const format = formatterFor(parameter.key);
 
@@ -132,7 +143,7 @@ export function ParameterCard({ parameter }: { parameter: ParameterSummary }) {
             <DeltaChip
               delta={parameter.sinceStart}
               parameterKey={parameter.key}
-              suffix="since you started"
+              suffix={sinceSuffix}
             />
           </div>
         )}
@@ -145,7 +156,7 @@ export function ParameterCard({ parameter }: { parameter: ParameterSummary }) {
             <DeltaChip
               delta={parameter.recent}
               parameterKey={parameter.key}
-              suffix="in your recent sessions"
+              suffix={recentSuffix}
             />
           </div>
         )}

@@ -163,6 +163,44 @@ export interface LevelEstimate {
   isProvisional: boolean;
 }
 
+/**
+ * One column of the trajectory report: a consecutive run of sessions, e.g. sessions 1–5.
+ * `label` is the session-number range; the dates are for the caption underneath it.
+ */
+export interface SessionGroup {
+  label: string;
+  startIndex: number;
+  endIndex: number;
+  sessionCount: number;
+  startDate: string;
+  endDate: string;
+}
+
+/** One parameter's row in the trajectory report: a mean per group, and first-vs-last verdict. */
+export interface GroupedParameter {
+  key: string;
+  group: string;
+  label: string;
+  goodDirection: 'higher' | 'lower' | null;
+  ordinal: boolean;
+  cumulative: boolean;
+  /** Mean of the known values in each group. Null where nothing in the group was measured. */
+  values: (number | null)[];
+  /** First group vs last group. Null for cumulative parameters and where either end is empty. */
+  delta: ParameterDelta | null;
+}
+
+/**
+ * Session history chunked into sequential groups, one row per parameter. This is the view that
+ * separates a real trajectory from session-to-session noise: a single session swings on topic,
+ * but five sessions averaged against five sessions only move when the learner does.
+ */
+export interface GroupReport {
+  groupSize: number;
+  groups: SessionGroup[];
+  parameters: GroupedParameter[];
+}
+
 export interface ProgressSummary {
   learner: { id: string; displayName: string };
   totals: {
@@ -180,6 +218,15 @@ export interface ProgressSummary {
   /** Every parameter the learner can track, each with its series and its two deltas. */
   parameters: ParameterSummary[];
   recentCorrections: ErrorRow[];
+  /**
+   * The raw history, oldest-first — the same rows every aggregate above was computed from.
+   * Shipped so the session explorer can filter to a window and re-run the SAME pure analysis
+   * over the subset, rather than carrying a second, parallel set of numbers that could
+   * disagree with the cards. `sessions[i]` lines up with `parameters[*].points[i]`.
+   */
+  sessions: SessionRow[];
+  /** Every stored correction, oldest-first. `recentCorrections` above is the last 15 of these. */
+  errors: ErrorRow[];
   /** Honesty surface. The UI shows this so a learner knows what the numbers rest on. */
   dataQuality: {
     gradedSessions: number;

@@ -38,6 +38,13 @@ than a chatbot: a general-purpose assistant has no memory of your last conversat
 tell you that the articles you had under control have started slipping again. This can, because every
 mistake is stored individually and compared across sessions.
 
+The dashboard reads at three depths. The aggregates answer "where am I now"; a **trajectory report**
+breaks the history into sequential groups of sessions (1–5 vs 6–10 vs …) so you can see whether each
+stretch of practice beat the one before, which session-to-session lines are too noisy to say; and a
+**session explorer** lets you filter to a recent window (last 5 or 10 sessions, past week or month)
+or open any single session and see its own numbers next to what is typical for you, with that
+session's corrections underneath.
+
 What is tracked, and what is deliberately not:
 
 | Tracked | How |
@@ -477,7 +484,7 @@ web/                        the website (Next.js)
   lib/guard.ts              requireLearnerId() — the one-liner at the top of every private page
   lib/learners.ts           the only module that writes the learners table
   lib/db.ts                 the Neon handle
-  lib/progress/             SQL (summary.ts) → pure analysis (analysis.ts) → types
+  lib/progress/             SQL (summary.ts) → pure analysis (analysis.ts, filters.ts) → types
 
   components/layout/        the app shell — header, nav, sign-out
   components/auth/          the login form

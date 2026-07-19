@@ -3,6 +3,7 @@ livekit-agents>=1.6.4
 livekit-plugins-groq>=1.6.4
 livekit-plugins-silero>=1.6.4  # onnxruntime VAD; see agent/tutor.py::_load_vad
 edge-tts>=6.1.9
+livekit-plugins-bithuman>=1.6.6  # personalized photo avatar (cloud mode); see agent/tutor.py
 av>=12.0.0
 tavily-python>=0.5.0  # backs the search_web tool; see tools/search.py
 pydantic-settings>=2.0.0

@@ -133,6 +133,13 @@ export interface AgentSessionView_01Props {
    */
   isPreConnectBufferEnabled?: boolean;
 
+  /**
+   * Renders the free animated character (components/avatar/animated-tutor.tsx) in the agent
+   * tile instead of the abstract audio visualizer. Ignored while the agent publishes a video
+   * track (the bitHuman photo avatar), which always wins the tile.
+   */
+  characterAvatar?: 'boy' | 'girl';
+
   /** Selects the visualizer style rendered in the main tile area. */
   audioVisualizerType?: 'bar' | 'wave' | 'grid' | 'radial' | 'aura';
   /** Primary hex color used by supported audio visualizer variants. */
@@ -161,6 +168,7 @@ export function AgentSessionView_01({
   supportsVideoInput = true,
   supportsScreenShare = true,
   isPreConnectBufferEnabled = true,
+  characterAvatar,
 
   audioVisualizerType,
   audioVisualizerColor,
@@ -226,6 +234,7 @@ export function AgentSessionView_01({
       {/* Tile layout */}
       <TileLayout
         chatOpen={chatOpen}
+        characterAvatar={characterAvatar}
         audioVisualizerType={audioVisualizerType}
         audioVisualizerColor={audioVisualizerColor}
         audioVisualizerColorShift={audioVisualizerColorShift}

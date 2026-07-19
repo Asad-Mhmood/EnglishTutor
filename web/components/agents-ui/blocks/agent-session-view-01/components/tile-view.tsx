@@ -8,6 +8,7 @@ import {
   useTracks,
   useVoiceAssistant,
 } from '@livekit/components-react';
+import { AnimatedTutor } from '@/components/avatar/animated-tutor';
 import { cn } from '@/lib/shadcn/utils';
 import { AudioVisualizer } from './audio-visualizer';
 
@@ -69,6 +70,8 @@ export function useLocalTrackRef(source: Track.Source) {
 
 interface TileLayoutProps {
   chatOpen: boolean;
+  /** Render the free animated character instead of the audio visualizer. See agent-session-block. */
+  characterAvatar?: 'boy' | 'girl';
   audioVisualizerType?: 'bar' | 'wave' | 'grid' | 'radial' | 'aura';
   audioVisualizerColor?: `#${string}`;
   audioVisualizerColorShift?: number;
@@ -82,6 +85,7 @@ interface TileLayoutProps {
 
 export function TileLayout({
   chatOpen,
+  characterAvatar,
   audioVisualizerType,
   audioVisualizerColor,
   audioVisualizerColorShift,
@@ -119,7 +123,24 @@ export function TileLayout({
             ])}
           >
             <AnimatePresence mode="popLayout">
-              {!isAvatar && (
+              {!isAvatar && characterAvatar && (
+                // Free animated character (no bitHuman video track in the room)
+                <motion.div
+                  key="character"
+                  layoutId="agent"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1, scale: chatOpen ? 0.5 : 1 }}
+                  transition={{
+                    ...ANIMATION_TRANSITION,
+                    delay: animationDelay,
+                  }}
+                  className={cn('relative aspect-square h-[180px] md:h-[220px]')}
+                >
+                  <AnimatedTutor character={characterAvatar} className="h-full w-full" />
+                </motion.div>
+              )}
+
+              {!isAvatar && !characterAvatar && (
                 // Audio Agent
                 <motion.div
                   key="agent"

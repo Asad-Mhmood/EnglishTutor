@@ -419,12 +419,13 @@ does not.
 |---|---|
 | Live URL | <https://english-tutor-nine-green.vercel.app> |
 | Sign-in | any username + passcode `ALEX2026`. Rotate via `vercel env add APP_PASSCODE production --force`, then redeploy — note this **signs everyone out**, because the passcode is part of the session HMAC key (§6) |
+| Avatar passcode | `asad2026` (`AVATAR_PASSCODE`). Gates only photo-avatar uploads (metered bitHuman credits, 99/month free ≈ 25 avatar-minutes). Rotating it signs nobody out — it is not part of any HMAC key — it just stops new uploads |
 | LiveKit project | `demo-yygoau1f`, region `ap-south` (India West) |
 | LiveKit agent | `CA_e4HZqEcBFotF` |
 | Vercel project | `english-tutor` |
 | Agent resources | 2000m CPU / 4 GB, 1 replica |
 | Database | Neon `neon-violet-grass` (Vercel Marketplace), `ep-square-hat-atfqc9xa`, us-east-1 |
-| Schema | `python scripts/apply_schema.py`; 4 tables, idempotent, no version table |
+| Schema | `python scripts/apply_schema.py`; 5 tables, idempotent, no version table |
 
 ### A trap when adding a Vercel integration
 

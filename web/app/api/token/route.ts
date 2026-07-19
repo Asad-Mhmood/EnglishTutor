@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { AccessToken, type AccessTokenOptions, type VideoGrant } from 'livekit-server-sdk';
 import { RoomConfiguration } from '@livekit/protocol';
+import { hasAvatarPhoto } from '@/lib/avatars';
+import { getDb } from '@/lib/db';
 import { currentLearnerId } from '@/lib/session';
 
 type ConnectionDetails = {
@@ -46,6 +48,21 @@ export async function POST(req: Request) {
       ? RoomConfiguration.fromJson(body.room_config, { ignoreUnknownFields: true })
       : new RoomConfiguration();
 
+    // The avatar choice rides in the token's participant attributes, because that is the one
+    // channel the agent can trust: attributes minted here are signed with LIVEKIT_API_SECRET,
+    // so a client cannot claim the metered photo avatar by editing a request. "photo" is only
+    // honoured when a photo row actually exists — and a photo row can only exist if the
+    // learner passed the avatar passcode at upload time (/api/avatar). Everything else
+    // degrades to the free boy character rather than erroring: a stale choice should never
+    // cost anyone their call.
+    let avatarMode: 'boy' | 'girl' | 'photo' = body?.avatar === 'girl' ? 'girl' : 'boy';
+    if (body?.avatar === 'photo') {
+      const sql = getDb();
+      if (sql && (await hasAvatarPhoto(sql, learnerId).catch(() => false))) {
+        avatarMode = 'photo';
+      }
+    }
+
     // The participant identity is how the agent learns whose progress it is recording:
     // agent/tutor.py::_learner_id_from reads the id back out of this prefix. Since sign-in is
     // now mandatory, every session has a learner and every session is tracked — the anonymous
@@ -64,7 +81,11 @@ export async function POST(req: Request) {
     const roomName = `voice_assistant_room_${crypto.randomUUID()}`;
 
     const participantToken = await createParticipantToken(
-      { identity: participantIdentity, name: participantName },
+      {
+        identity: participantIdentity,
+        name: participantName,
+        attributes: { avatar_mode: avatarMode },
+      },
       roomName,
       roomConfig
     );

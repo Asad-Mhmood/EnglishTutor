@@ -78,9 +78,9 @@ locally and then fail in production, silently as far as your terminal is concern
 | Where | Holds | Set with |
 |---|---|---|
 | `.env` (repo root, gitignored) | everything, for local agent runs | edit the file |
-| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file |
-| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` |
-| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` |
+| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL`, `BITHUMAN_API_SECRET` | `lk agent update-secrets --secrets "K=V"` |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL` | `vercel env add K production` |
 
 Note the two halves reach the **same Neon database under different variable names**:
 `PROGRESS_DATABASE_URL` on the agent (which writes) and `DATABASE_URL` on Vercel (which reads,
@@ -101,10 +101,12 @@ passcode from `ARCHITECTURE.md` §9. Back the file up before adding an integrati
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GROQ_API_KEY`, or `TAVILY_API_KEY` raises a pydantic
 validation error at *import* time, before any agent code runs. On a deployed worker this means a
 missing secret is a **crashloop**, not a degraded agent. Everything else (`LLM_MODEL`, `STT_MODEL`,
-`TTS_VOICE`, `AGENT_GREETING`, `GRADING_MODEL`) has a default and can be overridden via env.
+`TTS_VOICE_MALE`, `TTS_VOICE_FEMALE`, `VISION_MODEL`, `AGENT_GREETING`, `GRADING_MODEL`) has a
+default and can be overridden via env.
 
-`PROGRESS_DATABASE_URL` is the deliberate exception: it is optional, so that a missing or broken
-database costs you progress tracking and **not the tutor**. See `progress/` below.
+`PROGRESS_DATABASE_URL` and `BITHUMAN_API_SECRET` are the deliberate exceptions: both are optional,
+so a missing or broken database costs you progress tracking, and a missing bitHuman key costs you
+photo avatars — **not the tutor**. See `progress/` and the avatars section below.
 
 After deploying, `lk agent logs` reaching `registered worker` with no traceback is the proof that
 every required secret was present.
@@ -155,6 +157,37 @@ synthesized `answer` string, which is what a voice reply should be built from.
   not to", and "don't search for grammar" are all prompt rules — there is no code-level gate.
 - livekit strips the docstring's `Args:` block out of the tool description and folds it into the
   JSON-schema parameter description. Both halves reach the LLM; they just land in different fields.
+
+### Avatars and personas — two free faces, one metered one
+
+The learner picks a tutor on the pre-call screen: **Ahmad** (boy, male voice), **Sara** (girl,
+female voice), or **their own photo**. The choice travels as the `avatar_mode` participant
+attribute (`boy` | `girl` | `photo`) inside the room token — the one channel the agent can trust,
+because only `/api/token` can mint it.
+
+- **The two characters are browser-rendered and free** (`web/components/avatar/animated-tutor.tsx`):
+  an SVG face driven by the agent's live audio level via `useTrackVolume`. No avatar service, no
+  per-minute cost. The persona decides the Edge TTS voice and the name in the prompt/greeting
+  (`agent/personas.py`, `prompts/tutor.py::tutor_prompt`).
+- **The photo avatar is bitHuman cloud** (`livekit-plugins-bithuman`, Expression model, ~4
+  credits/min against a 99-credit/month free tier) and is **passcode-gated**: uploading a photo
+  requires `AVATAR_PASSCODE`, checked server-side in `/api/avatar` on every write. The photo lives
+  in the `learner_avatars` table (bytea, downscaled client-side to ≤640px JPEG), and **the row's
+  existence is the entitlement** — the token route only mints `avatar_mode=photo` when a row
+  exists, and the agent never sees the passcode.
+- **The voice matches the picture.** At session start the agent runs one Groq vision call
+  (`agent/avatars.py::detect_gender`) on the photo and picks the male or female persona. Groq's
+  only current vision model is `qwen/qwen3.6-27b` (Llama 4 Scout was retired June 2026), and it
+  **answers inside a `<think>` block** — the parser must read only the text after `</think>`, and
+  the token budget must be large enough for the monologue (512), or the answer never arrives.
+- **Every avatar failure degrades to a working call.** No bitHuman key, no photo, a failed vision
+  call, exhausted credits, a bitHuman outage — each falls back a rung (photo → default persona →
+  voice-only) and never raises. The frontend mirrors this: the photo avatar arrives as a video
+  track that takes over the tile on its own (`tile-view.tsx`); if it never arrives, the neutral
+  visualizer shows — deliberately not a character face, whose fixed look could contradict the
+  photo-matched voice.
+- The bitHuman plugin replaces the session's audio output itself (`replace_audio_tail`) — do not
+  add `RoomOutputOptions(audio_enabled=False)`; `avatar.start()` must run before `session.start()`.
 
 ### The `sys.modules` stub in `main.py` — do not move or remove
 

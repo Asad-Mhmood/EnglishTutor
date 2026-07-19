@@ -176,3 +176,22 @@ CREATE TABLE IF NOT EXISTS learner_vocabulary (
 );
 
 CREATE INDEX IF NOT EXISTS learner_vocabulary_session_idx ON learner_vocabulary (first_seen_session_id);
+
+-- ---------------------------------------------------------------------------
+-- learner_avatars — the uploaded photo behind the personalized avatar
+-- ---------------------------------------------------------------------------
+-- The photo lives in Postgres rather than object storage on purpose: it is small (the web
+-- client downscales to ~640px JPEG before upload), both halves already reach this database
+-- under their existing credentials, and a blob store would be a fifth secret location for a
+-- feature that must never be the reason the tutor breaks.
+--
+-- A row here is also the entitlement: the only writer is web/app/api/avatar/route.ts, which
+-- checks the avatar passcode before every write. The agent therefore trusts the row's
+-- existence and never sees the passcode. One row per learner — a new upload replaces the old
+-- photo, it does not accumulate.
+CREATE TABLE IF NOT EXISTS learner_avatars (
+  learner_id   uuid PRIMARY KEY REFERENCES learners (id) ON DELETE CASCADE,
+  image        bytea       NOT NULL,  -- JPEG bytes, downscaled client-side
+  content_type text        NOT NULL DEFAULT 'image/jpeg',
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);

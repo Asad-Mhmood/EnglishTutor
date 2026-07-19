@@ -78,6 +78,19 @@ export function passcodeMatches(input: string): boolean {
 }
 
 /**
+ * The SECOND passcode, gating only the personalized photo avatar.
+ *
+ * The photo avatar is the one feature that burns a metered quota (bitHuman credits), so it
+ * gets its own door: everyone with APP_PASSCODE can talk to the tutor for free, and only
+ * holders of AVATAR_PASSCODE can start sessions that cost avatar minutes. The comparison
+ * lives here, server-side, for the same reason passcodeMatches does — an `if` in client code
+ * ships the passcode to every browser that loads the page.
+ */
+export function avatarPasscodeMatches(input: string): boolean {
+  return equals(input, requireEnv('AVATAR_PASSCODE'));
+}
+
+/**
  * The HMAC key. Both halves matter — see the header: the secret makes the cookie unforgeable,
  * the passcode makes rotation actually revoke.
  */

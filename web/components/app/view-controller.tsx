@@ -6,6 +6,7 @@ import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import { AgentSessionView_01 } from '@/components/agents-ui/blocks/agent-session-view-01';
 import { WelcomeView } from '@/components/app/welcome-view';
+import type { AvatarChoice } from '@/lib/avatar-choice';
 
 const MotionWelcomeView = motion.create(WelcomeView);
 const MotionSessionView = motion.create(AgentSessionView_01);
@@ -31,9 +32,20 @@ const VIEW_MOTION_PROPS = {
 interface ViewControllerProps {
   appConfig: AppConfig;
   learnerName: string | null;
+  avatarChoice: AvatarChoice;
+  hasPhoto: boolean;
+  onPickAvatar: (choice: 'boy' | 'girl') => void;
+  onPickPhotoAvatar: () => void;
 }
 
-export function ViewController({ appConfig, learnerName }: ViewControllerProps) {
+export function ViewController({
+  appConfig,
+  learnerName,
+  avatarChoice,
+  hasPhoto,
+  onPickAvatar,
+  onPickPhotoAvatar,
+}: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const { resolvedTheme } = useTheme();
 
@@ -46,6 +58,10 @@ export function ViewController({ appConfig, learnerName }: ViewControllerProps) 
           {...VIEW_MOTION_PROPS}
           startButtonText={appConfig.startButtonText}
           learnerName={learnerName}
+          avatarChoice={avatarChoice}
+          hasPhoto={hasPhoto}
+          onPickAvatar={onPickAvatar}
+          onPickPhotoAvatar={onPickPhotoAvatar}
           onStartCall={start}
         />
       )}
@@ -58,6 +74,11 @@ export function ViewController({ appConfig, learnerName }: ViewControllerProps) 
           supportsVideoInput={appConfig.supportsVideoInput}
           supportsScreenShare={appConfig.supportsScreenShare}
           isPreConnectBufferEnabled={appConfig.isPreConnectBufferEnabled}
+          // The photo avatar arrives as a real video track and takes over the tile on its
+          // own; the free characters are rendered locally from this prop. Photo mode passes
+          // no character, so a failed bitHuman session falls back to the neutral visualizer
+          // rather than to a face whose voice may not match.
+          characterAvatar={avatarChoice === 'photo' ? undefined : avatarChoice}
           audioVisualizerType={appConfig.audioVisualizerType}
           audioVisualizerColor={
             resolvedTheme === 'dark'

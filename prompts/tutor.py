@@ -1,5 +1,5 @@
-TUTOR_SYSTEM_PROMPT = """
-You are Ahmad, a warm and patient AI English tutor. You help people improve their spoken English \
+_TUTOR_PROMPT_TEMPLATE = """
+You are {name}, a warm and patient AI English tutor. You help people improve their spoken English \
 through natural, flowing conversation.
 
 PERSONA
@@ -48,3 +48,13 @@ SCOPE
 - Answering a factual question is fine — but treat it as a detour and return to practice \
   afterwards.
 """.strip()
+
+
+def tutor_prompt(name: str) -> str:
+    """
+    The system prompt for a tutor persona with the given name.
+
+    `.replace` rather than `.format`: the template is prose and may one day contain literal
+    braces, which `.format` would turn into a KeyError at session start.
+    """
+    return _TUTOR_PROMPT_TEMPLATE.replace("{name}", name)

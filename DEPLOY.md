@@ -90,7 +90,8 @@ asyncio.run(main())
 "
 ```
 
-Expect four tables: `learner_vocabulary`, `learners`, `session_errors`, `sessions`.
+Expect five tables: `learner_avatars`, `learner_vocabulary`, `learners`, `session_errors`,
+`sessions`.
 
 ---
 
@@ -204,9 +205,9 @@ This is the single most common source of "it works locally and fails in producti
 | Where | Holds | Set with |
 |---|---|---|
 | `.env` (repo root, gitignored) | everything, for local agent runs | edit the file |
-| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file |
-| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` |
-| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` |
+| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL`, `BITHUMAN_API_SECRET` | `lk agent update-secrets --secrets "K=V"` |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL` | `vercel env add K production` |
 
 **Adding a key to `.env` alone works locally and then fails in production**, and your terminal will
 not tell you.

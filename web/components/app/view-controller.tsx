@@ -33,7 +33,7 @@ interface ViewControllerProps {
   appConfig: AppConfig;
   learnerName: string | null;
   avatarChoice: AvatarChoice;
-  hasPhoto: boolean;
+  photoSrc: string | null;
   onPickAvatar: (choice: 'boy' | 'girl') => void;
   onPickPhotoAvatar: () => void;
 }
@@ -42,7 +42,7 @@ export function ViewController({
   appConfig,
   learnerName,
   avatarChoice,
-  hasPhoto,
+  photoSrc,
   onPickAvatar,
   onPickPhotoAvatar,
 }: ViewControllerProps) {
@@ -59,7 +59,7 @@ export function ViewController({
           startButtonText={appConfig.startButtonText}
           learnerName={learnerName}
           avatarChoice={avatarChoice}
-          hasPhoto={hasPhoto}
+          photoSrc={photoSrc}
           onPickAvatar={onPickAvatar}
           onPickPhotoAvatar={onPickPhotoAvatar}
           onStartCall={start}

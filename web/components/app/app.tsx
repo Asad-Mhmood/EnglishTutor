@@ -33,7 +33,14 @@ interface AppProps {
 export function App({ appConfig, learnerName }: AppProps) {
   const [avatarChoice, setAvatarChoice] = useState<AvatarChoice>(DEFAULT_AVATAR_CHOICE);
   const [hasPhoto, setHasPhoto] = useState(false);
+  // Bumped on every new upload so the <img> URLs change and no cache — browser or CDN —
+  // can keep showing the photo that was just replaced.
+  const [photoVersion, setPhotoVersion] = useState(0);
   const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+
+  // Where the learner's own photo can be fetched from, or null before any upload. This is
+  // what lets the "My photo" tile show the actual photo instead of a generic icon.
+  const photoSrc = hasPhoto ? `/api/avatar/photo?v=${photoVersion}` : null;
 
   // Whether a photo is on file decides how the "My photo" tile presents itself (locked vs
   // ready). Fetched once; a failure just leaves the tile locked, which costs one extra click.
@@ -87,17 +94,20 @@ export function App({ appConfig, learnerName }: AppProps) {
           appConfig={appConfig}
           learnerName={learnerName}
           avatarChoice={avatarChoice}
-          hasPhoto={hasPhoto}
+          photoSrc={photoSrc}
           onPickAvatar={setAvatarChoice}
           onPickPhotoAvatar={() => setPhotoDialogOpen(true)}
         />
       </main>
       <PersonalAvatarDialog
         open={photoDialogOpen}
-        hasPhoto={hasPhoto}
+        photoSrc={photoSrc}
         onClose={() => setPhotoDialogOpen(false)}
-        onReady={() => {
+        onReady={(uploadedNew) => {
           setHasPhoto(true);
+          if (uploadedNew) {
+            setPhotoVersion((v) => v + 1);
+          }
           setAvatarChoice('photo');
           setPhotoDialogOpen(false);
         }}

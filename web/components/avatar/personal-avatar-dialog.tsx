@@ -22,7 +22,8 @@ import { TextField } from '@/components/ui/text-field';
 
 interface PersonalAvatarDialogProps {
   open: boolean;
-  hasPhoto: boolean;
+  /** URL of the already-uploaded photo, or null before any upload. */
+  photoSrc: string | null;
   onClose: () => void;
   /** The photo is on the server; the caller flips the pre-call choice to 'photo'. */
   onReady: (uploadedNew: boolean) => void;
@@ -30,10 +31,11 @@ interface PersonalAvatarDialogProps {
 
 export function PersonalAvatarDialog({
   open,
-  hasPhoto,
+  photoSrc,
   onClose,
   onReady,
 }: PersonalAvatarDialogProps) {
+  const hasPhoto = photoSrc !== null;
   const [passcode, setPasscode] = useState('');
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +128,21 @@ export function PersonalAvatarDialog({
 
         {hasPhoto && !showUploadForm ? (
           <div className="flex flex-col gap-2.5">
+            {photoSrc && (
+              <div className="flex items-center gap-3">
+                <Image
+                  src={photoSrc}
+                  alt="Your saved photo"
+                  width={56}
+                  height={56}
+                  unoptimized
+                  className="size-14 rounded-full object-cover"
+                />
+                <p className="text-muted-foreground text-sm">
+                  This is the photo your tutor will use.
+                </p>
+              </div>
+            )}
             <Button size="lg" className="w-full rounded-lg" onClick={() => onReady(false)}>
               Use my saved photo
             </Button>

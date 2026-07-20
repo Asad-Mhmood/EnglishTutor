@@ -20,7 +20,7 @@ interface WelcomeViewProps {
   startButtonText: string;
   learnerName: string | null;
   avatarChoice: AvatarChoice;
-  hasPhoto: boolean;
+  photoSrc: string | null;
   onPickAvatar: (choice: 'boy' | 'girl') => void;
   onPickPhotoAvatar: () => void;
   onStartCall: () => void;
@@ -30,7 +30,7 @@ export const WelcomeView = ({
   startButtonText,
   learnerName,
   avatarChoice,
-  hasPhoto,
+  photoSrc,
   onPickAvatar,
   onPickPhotoAvatar,
   onStartCall,
@@ -53,7 +53,7 @@ export const WelcomeView = ({
         <div className="mt-6 w-full text-left">
           <AvatarPicker
             choice={avatarChoice}
-            hasPhoto={hasPhoto}
+            photoSrc={photoSrc}
             onPick={onPickAvatar}
             onPickPhoto={onPickPhotoAvatar}
           />

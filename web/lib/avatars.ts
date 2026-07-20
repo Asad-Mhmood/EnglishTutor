@@ -36,6 +36,31 @@ export async function hasAvatarPhoto(sql: Sql, learnerId: string): Promise<boole
   return rows.length > 0;
 }
 
+/**
+ * The stored photo bytes, or null if there aren't any.
+ *
+ * The driver's bytea handling is asymmetric: we WRITE the hex text form ('\x...') because
+ * parameters travel as text, but on READ the driver's type parser may hand back a Buffer
+ * already — or, without a parser, the raw hex string. Accept both rather than betting on
+ * which side of that behaviour the installed driver version lands on.
+ */
+export async function getAvatarPhoto(sql: Sql, learnerId: string): Promise<Buffer | null> {
+  const rows = await sql<{ image: unknown }>`
+    SELECT image FROM learner_avatars WHERE learner_id = ${learnerId}
+  `;
+  if (rows.length === 0) {
+    return null;
+  }
+  const value = rows[0].image;
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value);
+  }
+  if (typeof value === 'string') {
+    return Buffer.from(value.startsWith('\\x') ? value.slice(2) : value, 'hex');
+  }
+  return null;
+}
+
 export async function deleteAvatarPhoto(sql: Sql, learnerId: string): Promise<void> {
   await sql`DELETE FROM learner_avatars WHERE learner_id = ${learnerId}`;
 }

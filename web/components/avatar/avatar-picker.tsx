@@ -1,6 +1,7 @@
 'use client';
 
-import { CameraIcon, LockSimpleIcon } from '@phosphor-icons/react/dist/ssr';
+import Image from 'next/image';
+import { LockSimpleIcon } from '@phosphor-icons/react/dist/ssr';
 import { AnimatedTutor } from '@/components/avatar/animated-tutor';
 import type { AvatarChoice } from '@/lib/avatar-choice';
 import { cn } from '@/lib/shadcn/utils';
@@ -16,8 +17,12 @@ import { cn } from '@/lib/shadcn/utils';
 
 interface AvatarPickerProps {
   choice: AvatarChoice;
-  /** Photo already uploaded — the photo tile shows as ready instead of locked. */
-  hasPhoto: boolean;
+  /**
+   * URL of the learner's uploaded photo, or null before any upload. Non-null makes the
+   * photo tile show the actual photo — the visible proof the upload worked — where the
+   * character tiles show their faces.
+   */
+  photoSrc: string | null;
   onPick: (choice: 'boy' | 'girl') => void;
   onPickPhoto: () => void;
 }
@@ -49,7 +54,7 @@ function Tile({ label, sublabel, selected, onClick, children }: TileProps) {
   );
 }
 
-export function AvatarPicker({ choice, hasPhoto, onPick, onPickPhoto }: AvatarPickerProps) {
+export function AvatarPicker({ choice, photoSrc, onPick, onPickPhoto }: AvatarPickerProps) {
   return (
     <div className="w-full">
       <p className="text-foreground mb-2 text-sm font-medium">Choose your tutor</p>
@@ -74,20 +79,27 @@ export function AvatarPicker({ choice, hasPhoto, onPick, onPickPhoto }: AvatarPi
 
         <Tile
           label="My photo"
-          sublabel={hasPhoto ? 'ready' : 'passcode'}
+          sublabel={photoSrc ? 'ready' : 'passcode'}
           selected={choice === 'photo'}
           onClick={onPickPhoto}
         >
-          <span
-            aria-hidden
-            className="bg-muted text-muted-foreground flex size-14 items-center justify-center rounded-full"
-          >
-            {hasPhoto ? (
-              <CameraIcon size={22} weight="bold" />
-            ) : (
+          {photoSrc ? (
+            <Image
+              src={photoSrc}
+              alt="Your uploaded photo"
+              width={56}
+              height={56}
+              unoptimized
+              className="size-14 rounded-full object-cover"
+            />
+          ) : (
+            <span
+              aria-hidden
+              className="bg-muted text-muted-foreground flex size-14 items-center justify-center rounded-full"
+            >
               <LockSimpleIcon size={22} weight="bold" />
-            )}
-          </span>
+            </span>
+          )}
         </Tile>
       </div>
     </div>

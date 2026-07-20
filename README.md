@@ -4,18 +4,21 @@ A real-time voice agent that acts as a conversational English tutor. You talk, i
 talks back — correcting mistakes naturally in the flow of conversation rather than stopping to
 lecture. It then remembers what you got wrong, and tells you when a mistake you had fixed comes back.
 
-The tutor persona is "Ahmad": patient, encouraging, and calibrated to your proficiency level. It
-embeds corrections into its replies (you say *"I goed to the store"*, it answers *"Oh, you went to
-the store! What did you get?"*) and always ends with a follow-up question to keep you talking.
+There are two tutor personas — **Ahmad** and **Sara**, each with an animated face and a matching
+voice — and you pick one on the pre-call screen. Both are patient, encouraging, and calibrated to
+your proficiency level. They embed corrections into their replies (you say *"I goed to the store"*,
+the tutor answers *"Oh, you went to the store! What did you get?"*) and always end with a follow-up
+question to keep you talking. You can also upload a photo and have *that person* become your tutor's
+face, with a voice matched to the picture — see **Avatars** below.
 
 ## Try it
 
 **<https://english-tutor-nine-green.vercel.app>** — passcode `ALEX2026`
 
 Sign in with **any username** you like plus the passcode. There is no registration step — the first
-time a username is used, it becomes yours. Then pick **Talk to Ahmad** and allow the microphone.
-Nothing to install; it works on a phone. Ahmad greets you first, so if you hear the greeting,
-everything downstream is working.
+time a username is used, it becomes yours. Then pick **Talk to Ahmad**, choose your tutor (Ahmad,
+Sara, or your own photo), and allow the microphone. Nothing to install; it works on a phone. The
+tutor greets you first, so if you hear the greeting, everything downstream is working.
 
 Use the **same username on every device** and your progress follows you: phone and laptop are one
 learner, not two.
@@ -28,9 +31,19 @@ idle and has to wake up.
 **Voice conversation.** A full speech pipeline: voice activity detection, speech-to-text, an LLM, and
 text-to-speech, all on free tiers.
 
-**Web search.** Ask about the news, the weather, a price, last night's score, and Ahmad looks it up
-via [Tavily](https://tavily.com). It announces the search out loud first, because dead air on a voice
-call is unnerving. Tell it not to search and it won't.
+**Web search.** Ask about the news, the weather, a price, last night's score, and the tutor looks it
+up via [Tavily](https://tavily.com). It announces the search out loud first, because dead air on a
+voice call is unnerving. Tell it not to search and it won't.
+
+**Avatars.** Every call has a face. The two built-in characters — Ahmad (male voice) and Sara
+(female voice), drawn as South Asian portraits — are rendered in the browser and animated live from
+the tutor's audio: the mouth follows the voice, the eyes blink, the brows lift while it thinks.
+They cost nothing per minute. The third option is a **personalized avatar**: upload a photo and
+[bitHuman](https://www.bithuman.ai) animates that face in real time, with the agent running one
+vision call on the picture first so the voice matches the person in it. Photo avatars burn metered
+bitHuman credits (~25 minutes/month on the free tier), so uploading one is gated behind a second
+passcode (`AVATAR_PASSCODE`), checked server-side on every upload. If bitHuman fails, credits run
+out, or the key is missing, the call degrades to voice-only — the tutor itself is never blocked.
 
 **Progress tracking.** Every session is analysed after the call ends, and `/progress` shows you where
 you are, what to fix, and whether you are actually improving. This is the part that makes it more
@@ -96,11 +109,12 @@ The agent is where the voice pipeline lives, orchestrated by
 
 ```
 mic → Silero VAD → Groq STT → Groq LLM → Edge TTS → speaker
-                (whisper-large-v3-turbo)  (llama-3.3-70b)
+                (whisper-large-v3-turbo)  (llama-3.3-70b)  (male or female voice, per persona)
 ```
 
 Everything on that path is a free tier: Groq for STT and the LLM, Microsoft Edge neural voices for
-TTS (no API key at all), Tavily for search, and Neon for the database.
+TTS (no API key at all), Tavily for search, and Neon for the database. The one metered exception is
+the optional photo avatar (bitHuman cloud), which is why it sits behind its own passcode.
 
 **The agent writes to the database; the website only reads from it.** They never talk to each other
 directly.
@@ -124,6 +138,12 @@ For progress tracking:
 - A Postgres database. This project uses [Neon](https://neon.tech) via the Vercel Marketplace, free
   tier. It is **optional** — without it the tutor works exactly as before and simply records nothing.
 
+For the photo avatar:
+
+- A [bitHuman](https://www.bithuman.ai) API secret (free tier: 99 credits/month ≈ 25 minutes of
+  Expression avatar). Also **optional** — without it the photo option quietly degrades to
+  voice-only, and the free animated characters are unaffected.
+
 ## Local setup
 
 ```bash
@@ -146,6 +166,9 @@ TAVILY_API_KEY=your_tavily_key
 
 # Optional. Without it the tutor runs untracked — it does NOT fail.
 PROGRESS_DATABASE_URL=postgresql://...
+
+# Optional. Without it the photo avatar degrades to voice-only — it does NOT fail.
+BITHUMAN_API_SECRET=your_bithuman_secret
 ```
 
 The first five are **required**: `config/settings.py` builds its `Settings()` at import time, so a
@@ -156,9 +179,12 @@ missing one raises a pydantic error before any agent code runs. Optional overrid
 | `LLM_MODEL` | `llama-3.3-70b-versatile` | the conversational model |
 | `GRADING_MODEL` | `llama-3.3-70b-versatile` | the model that grades a finished session |
 | `STT_MODEL` | `whisper-large-v3-turbo` | |
-| `TTS_VOICE` | `en-US-JennyNeural` | any [Edge TTS voice](https://github.com/rany2/edge-tts); `edge-tts --list-voices` |
-| `AGENT_GREETING` | *(see `config/settings.py`)* | |
+| `TTS_VOICE_MALE` | `en-US-ChristopherNeural` | Ahmad's voice — any [Edge TTS voice](https://github.com/rany2/edge-tts); `edge-tts --list-voices` |
+| `TTS_VOICE_FEMALE` | `en-US-JennyNeural` | Sara's voice |
+| `VISION_MODEL` | `qwen/qwen3.6-27b` | matches the photo avatar's voice to the person in the picture |
+| `AGENT_GREETING` | *(see `config/settings.py`)* | `{name}` is replaced with the persona's name |
 | `PROGRESS_DATABASE_URL` | *(unset)* | Postgres for progress tracking |
+| `BITHUMAN_API_SECRET` | *(unset)* | enables the personalized photo avatar |
 
 ## Running locally
 
@@ -193,6 +219,7 @@ LIVEKIT_API_KEY=your_key
 LIVEKIT_API_SECRET=your_secret
 
 APP_PASSCODE=ALEX2026    # what visitors must type to start a call
+AVATAR_PASSCODE=...      # what they must type to UPLOAD a photo avatar (metered bitHuman credits)
 DATABASE_URL=postgresql://...   # same database the agent writes to, different variable name
 AGENT_NAME=              # must stay EMPTY — see below
 ```
@@ -255,9 +282,9 @@ production, silently as far as your terminal is concerned.
 | Store | Holds | Written with | Read by |
 |---|---|---|---|
 | `.env` (repo root, gitignored) | everything, for local runs | edit the file | `python main.py …` on your machine |
-| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `DATABASE_URL` | edit the file | `pnpm dev` on your machine |
-| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
-| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` | the deployed website |
+| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL` | edit the file | `pnpm dev` on your machine |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL`, `BITHUMAN_API_SECRET` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL` | `vercel env add K production` | the deployed website |
 
 Things that look wrong but are correct:
 
@@ -308,7 +335,8 @@ guarded `UPDATE`s throughout — so **re-running it is how you migrate.** There 
 and no Alembic: one database, one schema file. Write new DDL so that running the file twice is a
 no-op, and applying a change is just running the script again.
 
-It creates four tables: `learners`, `sessions`, `session_errors`, `learner_vocabulary`.
+It creates five tables: `learners`, `sessions`, `session_errors`, `learner_vocabulary`,
+`learner_avatars`.
 
 ### 3. Give the agent the connection string
 
@@ -446,7 +474,9 @@ Anyone with the passcode who types your username sees your dashboard.
 ```
 main.py                     entry point — see the note below
 agent/tutor.py              pipeline wiring, learner identity, the shutdown hook
-prompts/tutor.py            the tutor's system prompt
+agent/personas.py           Ahmad and Sara — name + voice per avatar choice
+agent/avatars.py            photo avatar: load the photo from Neon, match a voice to it
+prompts/tutor.py            the tutor's system prompt (parameterized by persona name)
 plugins/edge_tts.py         custom LiveKit TTS plugin for Microsoft Edge TTS
 tools/search.py             the search_web function tool (Tavily)
 config/settings.py          env-backed settings
@@ -477,18 +507,23 @@ web/                        the website (Next.js)
 
   app/api/login/route.ts    checks the passcode, upserts the learner, signs the session cookie
   app/api/logout/route.ts   drops the cookie (the history stays)
-  app/api/token/route.ts    mints the LiveKit JWT — gated, and carries the learner id
+  app/api/token/route.ts    mints the LiveKit JWT — gated; carries the learner id + avatar choice
+  app/api/avatar/route.ts   photo upload (avatar-passcode-gated), has-photo check, delete
+  app/api/avatar/photo/     serves the signed-in learner their own photo, for the picker
   app/api/progress/route.ts the dashboard's data, as JSON
 
-  lib/session.ts            the passcode check, the signed session cookie, username rules
+  lib/session.ts            both passcode checks, the signed session cookie, username rules
   lib/guard.ts              requireLearnerId() — the one-liner at the top of every private page
   lib/learners.ts           the only module that writes the learners table
+  lib/avatars.ts            the only module that touches the learner_avatars table
+  lib/avatar-choice.ts      the avatar picker's client-safe types and labels
   lib/db.ts                 the Neon handle
   lib/progress/             SQL (summary.ts) → pure analysis (analysis.ts, filters.ts) → types
 
   components/layout/        the app shell — header, nav, sign-out
   components/auth/          the login form
   components/home/          the two action cards
+  components/avatar/        the animated Ahmad/Sara faces, the picker, the photo dialog
   components/progress/      the dashboard — rendering only
 ```
 
@@ -563,6 +598,17 @@ to CRLF. Run `pnpm exec prettier --write .` from `web/`.
 
 **`/progress` says "Progress tracking isn't set up".** No `DATABASE_URL` on the website. This is a
 graceful degradation, not a crash — the tutor still works.
+
+**The photo avatar never appears — the call is voice-only with the plain visualizer.** By design,
+every avatar failure degrades to a working call, so the reason is in `lk agent logs`: no
+`BITHUMAN_API_SECRET` on the agent, no photo row for that learner, exhausted bitHuman credits
+(99/month free), or a bitHuman outage. Also give it 15–30 seconds — the vision call and the avatar
+worker spin-up happen before the video track arrives.
+
+**The photo avatar speaks with the "wrong" voice.** The voice comes from one vision call on the
+uploaded photo (`agent/avatars.py::detect_gender`). If the model can't tell (no clear face in the
+picture), the agent defaults to the male persona rather than guessing. A clearer, front-facing
+photo fixes it.
 
 **A session happened but no progress row appeared.** Two things to check, in order: did they say at
 least 30 words (below `MIN_WORDS_FOR_GRADING` the session is recorded but not graded); and is

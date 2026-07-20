@@ -34,19 +34,21 @@ Two separately deployed halves. Neither one redeploys the other.
    │   LIVEKIT_API_KEY     │        │              │    dispatch │
    │   LIVEKIT_API_SECRET  │        │  ┌───────────▼───────────┐ │
    │   APP_PASSCODE        │        │  │  AGENT WORKER         │ │
-   └───────────────────────┘        │  │  CA_e4HZqEcBFotF      │ │
-                                    │  │  (our Dockerfile)     │ │
+   │   AVATAR_PASSCODE     │        │  │  CA_e4HZqEcBFotF      │ │
+   └───────────────────────┘        │  │  (our Dockerfile)     │ │
                                     │  │                       │ │
                                     │  │  Holds:               │ │
                                     │  │   GROQ_API_KEY        │ │
                                     │  │   TAVILY_API_KEY      │ │
+                                    │  │   BITHUMAN_API_SECRET │ │
                                     │  └───────┬───────────────┘ │
                                     └──────────┼─────────────────┘
                                                │ 5. outbound HTTPS
-                          ┌────────────────────┼────────────────────┐
-                          ▼                    ▼                    ▼
-                      Groq API            Tavily API          Edge TTS
-                   (STT + LLM)            (web search)        (keyless)
+              ┌─────────────────┬──────────────┼──────────────────┐
+              ▼                 ▼              ▼                  ▼
+          Groq API         Tavily API      Edge TTS        bitHuman cloud
+       (STT + LLM +       (web search)     (keyless)      (photo avatar —
+        photo vision)                                      the one metered hop)
 ```
 
 **The key structural fact:** the browser never holds a credential. Vercel signs a short-lived room
@@ -121,6 +123,15 @@ signs. The agent gets its LiveKit connection injected by LiveKit Cloud automatic
 agent later writes to the progress tables hangs off that one string; `agent/tutor.py::_learner_id_from`
 parses it back out of `learner_<uuid>`. There is no other place the two halves exchange identity.
 
+**The avatar choice rides in the same token, as the `avatar_mode` participant attribute**
+(`boy` | `girl` | `photo`). It is trustworthy for the same reason the identity is: only the token
+route can mint it, and it only mints `photo` after confirming a photo row exists for that learner —
+a row that can only have been written through the avatar-passcode check in `/api/avatar`. The
+agent never sees either passcode. One client-side subtlety: the LiveKit `TokenSource` caches its
+minted token for the 15-minute TTL and does not key that cache on the request body, so the token
+source is rebuilt whenever the choice changes (`web/components/app/app.tsx`) — a long-lived source
+silently reuses the previous choice's token.
+
 **Dispatch is implicit and this matters.** The worker registers with an *empty* agent name, which puts
 LiveKit in automatic-dispatch mode: any room created on the project gets a worker. Nothing in the
 frontend names the agent. If someone sets `AGENT_NAME` in `web/.env.local` to a value that no worker
@@ -148,17 +159,29 @@ silence. This is the single most confusing failure this system can produce.
       │                                 (meanwhile: with_filler speaks
       │                                  "Let me search the web for…")
       ▼
-   Edge TTS  (en-US-JennyNeural, keyless)
+   Edge TTS  (keyless; male or female voice, chosen by the persona)
       │
       ▼
    MP3 → PyAV decode → PCM s16 mono 24 kHz
       │
       ▼
-   speaker
+   speaker   — or, in photo-avatar mode, the bitHuman worker: the plugin swaps the
+              session's audio output (`replace_audio_tail`) so speech streams to
+              bitHuman, which publishes lip-synced video + audio into the room
 ```
 
+Before the session is built, the entrypoint reads the `avatar_mode` attribute and resolves a
+**persona** (`agent/personas.py`): Ahmad (male voice) or Sara (female voice), which fixes the TTS
+voice, the name in the system prompt, and the greeting. In photo mode the persona comes from the
+photo itself — `agent/avatars.py::detect_gender` runs one Groq vision call on the uploaded picture
+so the voice matches the face. Every failure on the avatar path (no key, no photo, vision error,
+bitHuman outage, exhausted credits) falls back a rung — photo → default persona → voice-only — and
+never takes down the call.
+
 Everything on this path is a free tier: Groq for STT and LLM, Tavily at 1,000 searches/month, and
-Edge TTS which needs no key at all.
+Edge TTS which needs no key at all. The bitHuman hop is the single metered exception (99
+credits/month free ≈ 25 minutes of Expression avatar), which is why photo uploads sit behind
+`AVATAR_PASSCODE`.
 
 ---
 
@@ -246,9 +269,15 @@ production, silently as far as your terminal is concerned.
 | Store | Contains | How to write it | Read by |
 |---|---|---|---|
 | `.env` (repo root, gitignored) | everything | edit the file | local `main.py` runs only |
-| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file | local `pnpm dev` only |
-| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
-| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `DATABASE_URL` | `vercel env add K production` | the deployed web app |
+| `web/.env.local` (gitignored) | `LIVEKIT_*`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL`, empty `AGENT_NAME` | edit the file | local `pnpm dev` only |
+| LiveKit Cloud agent secrets | `GROQ_API_KEY`, `TAVILY_API_KEY`, `PROGRESS_DATABASE_URL`, `BITHUMAN_API_SECRET` | `lk agent update-secrets --secrets "K=V"` | the deployed agent |
+| Vercel project env | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `APP_PASSCODE`, `AVATAR_PASSCODE`, `DATABASE_URL` | `vercel env add K production` | the deployed web app |
+
+One sharp edge when writing Vercel env values from a script: piping a value in PowerShell appends a
+newline, and `vercel env add` stores it verbatim. The stored `AVATAR_PASSCODE` then ends in `\r\n`
+and no keyboard can ever type a matching value. Write values with `printf '%s'` (no trailing
+newline) from a POSIX shell, and if a passcode mysteriously "never matches", suspect the stored
+value's length before anything else.
 
 The agent and the web app reach the **same Neon database under different names** —
 `PROGRESS_DATABASE_URL` on the agent (the writer) and `DATABASE_URL` on Vercel (the reader,
@@ -384,6 +413,12 @@ These are the choices most likely to be "cleaned up" by someone who doesn't know
 | **Passcode checked *before* the username is validated** | validate the input first, it's cheaper | Validating the username first leaks which usernames exist, through the difference between "no such user" and "wrong passcode" — to someone who does not have the passcode at all. The cheap check goes second on purpose. |
 | **`AppShell` takes an `active` tab as a prop** | read `usePathname()` in the header | `usePathname` is a client hook, and using it would drag the entire header — nav, learner chip, sign-out — into the client bundle to answer a question the page already knows the answer to. The page states which tab it is; the header stays a server component. |
 | **Sign-out clears the cookie and deletes nothing** | also clear the learner's local data | There is no local data to clear, and that is the point. The history lives in Postgres keyed by username, so signing out is genuinely reversible: sign back in, anywhere, and it is all there. |
+| **Default avatars are browser-drawn SVG, not an avatar service** | run bitHuman for every call | Every avatar provider meters by the minute; the free tier is ~25 minutes/month. An SVG face animated from `useTrackVolume` costs nothing forever, works offline from any provider, and cannot have an outage. The metered service is reserved for the one thing SVG cannot do: animating a learner's own photo. |
+| **Avatar photos live in Postgres (bytea), not blob storage** | Vercel Blob / S3 | The photo is ≤150 KB after client-side downscaling, both halves already reach Neon under existing credentials, and a blob store would be a **fifth** unsynced secret location for a feature that must never be the reason the tutor breaks. Postgres is not a good big-file store; this is not a big file. |
+| **Photo-avatar entitlement = the row's existence** | send an "unlocked" flag from the client, or a grant cookie | The only writer of `learner_avatars` is `/api/avatar`, which checks `AVATAR_PASSCODE` on every write. A row therefore *proves* the passcode was entered, so the token route just checks for the row, and the agent trusts the signed `avatar_mode` attribute. No flag to forge, no second cookie to expire, and the agent never sees either passcode. |
+| **A second passcode for avatars, not the app passcode** | one passcode for everything | The two passcodes gate different budgets. Everyone with `APP_PASSCODE` can talk for free forever; only holders of `AVATAR_PASSCODE` can start sessions that burn bitHuman credits. Rotating the avatar passcode also deliberately signs nobody out — it is not part of any HMAC key. |
+| **The photo avatar's voice comes from a vision call on the photo** | let the learner pick the voice, or always use the default | A male face speaking with Sara's voice is worse than no avatar at all, and asking the learner one more question at upload is friction on the feature's showcase moment. One Groq vision call at session start (`qwen/qwen3.6-27b` — Groq's only vision model since Llama 4 Scout retired, and its answer must be parsed from *after* its `<think>` block) decides male/female; an unclear photo falls back to the default persona rather than guessing. |
+| **Token source rebuilt when the avatar choice changes** | one long-lived `TokenSource.custom` reading the choice through a ref | `TokenSourceCached` caches the minted token for its 15-minute TTL and does not key that cache on the request body, where the avatar choice travels. The ref version shipped first and silently reused the previous choice's token — picking "My photo" started a boy-mode call with no error anywhere. Rebuilding on choice change gives each choice an empty cache, and the choice can only change while disconnected. |
 
 ---
 
@@ -406,6 +441,10 @@ Ranked by how much time they can waste.
 | Progress rows stop appearing after a schema change | the agent's `INSERT` now fails, inside `repository.save_report`'s catch-all — which swallows it so a lost row can't take down a worker | apply `progress/schema.sql` **before** deploying the code that needs it |
 | `import progress.metrics` kills Python, **exit code 29, no traceback** | the `local_inference` `ExitProcess()` crash again — reached via `collector.py` | `progress/__init__.py` must import `TranscriptCollector` lazily via `__getattr__` |
 | Dashboard shows raw keys like `verb_tense` instead of "Verb tenses" | `web/lib/progress/taxonomy.json` is stale | `python scripts/sync_taxonomy.py` |
+| **Photo avatar never appears**; call is voice-only with the plain visualizer | every avatar failure degrades by design: no `BITHUMAN_API_SECRET` on the agent, no photo row, exhausted bitHuman credits, a bitHuman outage — or simply not waiting the ~15–30 s the avatar worker takes to join | `lk agent logs` — the avatar path logs which rung it fell to |
+| Photo avatar picked, but the **boy character's session starts** (fixed 2026-07-20) | the client's `TokenSource` cached a token minted under the previous avatar choice — the cache does not key on the request body | the token source must be rebuilt when the choice changes (`web/components/app/app.tsx`); if it regresses, decode the JWT and check `attributes.avatar_mode` |
+| A passcode is typed correctly and **never matches** | the stored env value has a trailing newline from a PowerShell pipe into `vercel env add` | re-add with `printf '%s' 'value' \| vercel env add K production --force` from bash, then redeploy |
+| Photo avatar speaks with the **wrong-gender voice** | the vision call couldn't identify the person (no clear face) and fell back to the default persona | a clear, front-facing photo of one person; `lk agent logs` shows `photo avatar: detected …` |
 
 The common thread: **this system fails quietly.** VAD failure, TTS failure, and dispatch failure all
 produce silence rather than an exception. When something is wrong, assume the logs know and the UI
@@ -413,7 +452,7 @@ does not.
 
 ---
 
-## 9. Current deployment (as of 2026-07-14)
+## 9. Current deployment (as of 2026-07-20)
 
 | | |
 |---|---|
@@ -443,10 +482,10 @@ shortly after deploy and 1 while warm, so expect a cold start on the first call 
 
 ### Not yet done
 
-- **Nothing is committed to git.** All three deploys went from the local working tree. This is the
-  biggest operational risk in the project: what is live corresponds to no commit anywhere.
-- **No CI, no push-to-deploy.** Connecting the GitHub repo to Vercel would give the web half
-  automatic deploys and remove the "deployed from an uncommitted tree" problem for that half.
+- **No CI, no push-to-deploy.** Deploys still ship from the local working tree (though, as of
+  2026-07-20, what is live *does* correspond to committed history — keep it that way by committing
+  before or right after deploying). Connecting the GitHub repo to Vercel would give the web half
+  automatic deploys and remove the risk of drift for that half.
 - **No database migration tool.** `progress/schema.sql` is idempotent and re-running it *is* the
   migration. A destructive change (dropping or retyping a column) has to be hand-written, and nothing
   verifies that the deployed code and the live schema agree.

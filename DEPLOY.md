@@ -219,16 +219,24 @@ Two things worth knowing:
   That is deliberate — `DATABASE_URL` is the name the Neon integration sets automatically.
 - `lk agent update-secrets` **merges**. It does not replace. Changing one key leaves the rest alone.
 
-### Rotating the passcode
+### Rotating the passcodes
 
 ```bash
 cd web
-vercel env add APP_PASSCODE production --force
+printf '%s' 'NEW_VALUE' | vercel env add APP_PASSCODE production --force     # from bash, NOT PowerShell
 vercel deploy --prod --yes          # REQUIRED — env changes do NOT apply to existing deployments
 ```
 
-**This signs everybody out**, including you. The passcode is part of the session cookie's HMAC key,
-so rotating it invalidates every live session. That is the point of a rotation — not a bug.
+**Use `printf` from bash, never a PowerShell pipe.** PowerShell appends a newline to piped values
+and `vercel env add` stores it verbatim — the stored passcode then ends in `\r\n` and no typed
+input can ever match it. This has already happened once (see ARCHITECTURE.md §5).
+
+**Rotating `APP_PASSCODE` signs everybody out**, including you. The passcode is part of the session
+cookie's HMAC key, so rotating it invalidates every live session. That is the point of a rotation —
+not a bug.
+
+`AVATAR_PASSCODE` rotates the same way but signs nobody out — it is not part of any HMAC key; it
+only gates new photo uploads (the metered bitHuman credits).
 
 Also update `web/.env.local` and `ARCHITECTURE.md` §9 to match, or local and deployed will disagree.
 

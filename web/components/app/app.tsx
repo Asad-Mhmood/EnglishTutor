@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TokenSource } from 'livekit-client';
 import { useSession } from '@livekit/components-react';
 import { WarningIcon } from '@phosphor-icons/react/dist/ssr';
@@ -50,15 +50,13 @@ export function App({ appConfig, learnerName }: AppProps) {
     };
   }, []);
 
-  // The token request carries the avatar choice, and the choice can change right up until
-  // the start button is pressed — after the token source is built. A ref bridges that gap:
-  // the source reads whatever the choice is at the moment of the request, without being
-  // rebuilt (and confusing useSession) on every click.
-  const avatarChoiceRef = useRef(avatarChoice);
-  useEffect(() => {
-    avatarChoiceRef.current = avatarChoice;
-  }, [avatarChoice]);
-
+  // The token source must be REBUILT when the avatar choice changes, not read the choice
+  // through a ref: TokenSource.custom caches its minted token for the token's 15-minute
+  // TTL, and the avatar choice lives in the request body, which the cache does not key on.
+  // With a long-lived source, picking "My photo" after any earlier token fetch silently
+  // reuses the cached boy-mode token and the agent never hears about the photo. A fresh
+  // source per choice starts with an empty cache; the choice can only change on the
+  // pre-call screen, so the session this replaces is never a connected one.
   const tokenSource = useMemo(() => {
     if (typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string') {
       return getSandboxTokenSource(appConfig);
@@ -67,14 +65,14 @@ export function App({ appConfig, learnerName }: AppProps) {
       const res = await fetch('/api/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar: avatarChoiceRef.current }),
+        body: JSON.stringify({ avatar: avatarChoice }),
       });
       if (!res.ok) {
         throw new Error(`Token request failed with status ${res.status}`);
       }
       return await res.json();
     });
-  }, [appConfig]);
+  }, [appConfig, avatarChoice]);
 
   const session = useSession(
     tokenSource,

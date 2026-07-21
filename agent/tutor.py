@@ -7,6 +7,7 @@ from livekit.plugins import groq, silero
 
 import progress
 from agent import avatars, personas
+from agent.text_filters import strip_tool_call_leakage
 from config.settings import settings
 from plugins.edge_tts import EdgeTTS
 from prompts.tutor import tutor_prompt
@@ -157,6 +158,10 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=groq.LLM(model=settings.LLM_MODEL),
         tts=EdgeTTS(voice=persona.voice),
         vad=_load_vad(),
+        # Groq's llama-3.3-70b-versatile occasionally leaks a tool call into the
+        # reply text as literal `<function=...>...</function>` syntax instead of
+        # the structured tool_calls field. See agent/text_filters.py.
+        tts_text_transforms=[strip_tool_call_leakage],
     )
 
     collector: progress.TranscriptCollector | None = None

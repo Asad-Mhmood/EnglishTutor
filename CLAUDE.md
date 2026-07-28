@@ -55,7 +55,15 @@ python scripts/sync_taxonomy.py           # copy progress/taxonomy.json into web
 python scripts/sync_taxonomy.py --check   # non-zero exit if web/'s copy is stale
 python scripts/seed_demo.py               # seed a demo learner with a known 8-session history
 python scripts/seed_demo.py --remove      # delete it again
+python scripts/make_icons.py              # re-render web/public/ PWA icons from tutor-logo.svg
+python scripts/make_icons.py --check      # non-zero exit if the committed icons are stale
 ```
+
+`make_icons.py` needs Pillow, which is intentionally absent from `requirements.txt` — that file is
+the agent's runtime dependency list and ships into the LiveKit container. The script derives the
+brand colour from the SVG but the bubble's geometry is a hand transcription, so it pins the path it
+was written against and aborts if the logo's shape changes rather than silently re-rendering the old
+one.
 
 `seed_demo.py` writes a history whose *expected* dashboard output is documented in its docstring
 (verb tenses must read "Slipped back", articles "Keeps happening", and so on). That makes it a

@@ -256,12 +256,21 @@ python scripts/sync_taxonomy.py --check   # fail if web/'s copy is stale — use
 
 python scripts/seed_demo.py               # seed a demo learner with a known 8-session history
 python scripts/seed_demo.py --remove      # delete it again
+
+python scripts/make_icons.py              # re-render the PWA icons from the tutor logo
+python scripts/make_icons.py --check      # fail if the committed icons are stale — use in CI
 ```
 
 `progress/taxonomy.json` is the single source of truth for error categories, labels, and practice
 advice. The website cannot import it — Vercel deploys from `web/` and never uploads anything above it
 — so it reads a **generated copy** at `web/lib/progress/taxonomy.json`. Edit the source, then run the
 sync script. If they drift, the dashboard falls back to showing raw category keys.
+
+`make_icons.py` is the same idea for images: `web/public/tutor-logo.svg` is the mark, and the
+home-screen PNGs beside it are generated copies. It reads the brand colour straight out of the SVG,
+so a recolour propagates — but the bubble's *geometry* is transcribed into the script by hand, so it
+pins the path it was transcribed from and refuses to run if the logo's shape changed. Needs Pillow,
+which is deliberately not in `requirements.txt` (that file ships into the agent container).
 
 ---
 

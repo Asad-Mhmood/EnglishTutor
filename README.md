@@ -26,6 +26,25 @@ learner, not two.
 The first call of the day can take a few seconds to connect — the agent worker scales to zero when
 idle and has to wake up.
 
+### Install it on your phone
+
+The site is a PWA, so it can live on a home screen with its own icon and open fullscreen, without
+an app store and without a second codebase.
+
+- **Android (Chrome):** the address bar offers **Install app**. Otherwise ⋮ → *Add to Home screen*.
+- **iPhone (Safari):** Share → *Add to Home Screen*. There is no automatic prompt — iOS has never
+  offered one, so the manual route is the only route.
+
+It is the same app either way, not a cut-down one: same sign-in, same voice call, same dashboard.
+What installing buys you is the icon, the fullscreen window, and not hunting for the link.
+
+**What it cannot do is run in the background.** Lock the phone or switch apps mid-call and the
+browser suspends the page, which drops the microphone and ends the session. That is a limit of the
+web platform, not of this setup, and it applies equally to the plain link. Background audio needs a
+real native app (LiveKit ships `@livekit/react-native`), which means a second frontend — the
+dashboard's charts and the SVG tutor faces do not port. Worth it only if practising with the screen
+off is something you actually want.
+
 ## What it does
 
 **Voice conversation.** A full speech pipeline: voice activity detection, speech-to-text, an LLM, and

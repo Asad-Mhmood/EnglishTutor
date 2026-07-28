@@ -18,11 +18,12 @@ import { APP_CONFIG_DEFAULTS } from '@/app-config';
  * the home screen after the 30-day cookie expires lands on the login form instead of a
  * redirect chain from a page the learner cannot see.
  *
- * There is NO service worker, on purpose. This app is useless offline — it is a live voice
- * call and a database-backed dashboard — so a cache would buy nothing and risk serving a
- * stale HTML shell to a signed-in learner. iOS has never required one for Add to Home Screen,
- * and current Chrome installs without one too. If the Android install prompt ever stops
- * appearing, a minimal fetch-through worker is the fix; do not add one for "offline support".
+ * There IS a service worker (public/sw.js), and it caches nothing. Chrome would not offer a
+ * real install without one — only a bookmark shortcut that opens in a tab with an address bar
+ * — so it exists to satisfy that check and for no other reason. Do not grow it into an
+ * offline cache: this app is a live voice call and a database-backed dashboard, so a cached
+ * HTML shell would only ever be a stale one served to a signed-in learner. iOS ignores all of
+ * this and installs from this manifest and the apple-* meta tags alone.
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {

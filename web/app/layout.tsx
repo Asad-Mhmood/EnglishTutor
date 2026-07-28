@@ -2,6 +2,7 @@ import type { Viewport } from 'next';
 import { Public_Sans } from 'next/font/google';
 import localFont from 'next/font/local';
 import { headers } from 'next/headers';
+import { ServiceWorker } from '@/components/app/service-worker';
 import { ThemeProvider } from '@/components/app/theme-provider';
 import { ThemeToggle } from '@/components/app/theme-toggle';
 import { cn } from '@/lib/shadcn/utils';
@@ -114,6 +115,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
           enableSystem
           disableTransitionOnChange
         >
+          <ServiceWorker />
           {/*
             The template's fixed "Built with LiveKit Agents" header used to live here. It was
             removed when the app grew real pages: /home and /progress carry their own header
